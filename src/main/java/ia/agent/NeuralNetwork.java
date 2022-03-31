@@ -4,10 +4,8 @@ import static java.util.Collections.*;
 import static java.util.Objects.*;
 import static java.util.stream.Collectors.*;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -33,9 +31,12 @@ public interface NeuralNetwork {
 		return new Builder();
 	}
 
+	public static record NeuronPair(Object input, Object output) {
+	};
+
 	public static class Builder {
-		private final Map<Object, Neuron> neurons = new LinkedHashMap<Object, Neuron>();
-		private final List<Synapse> synapses = new LinkedList<>();
+		private final Map<Object, Neuron> neurons = new LinkedHashMap<>();
+		private final Map<NeuronPair, Synapse> synapses2 = new LinkedHashMap<>();
 		private final Object neuronXId = specialId("input:x");
 		private final Object neuronYId = specialId("input:y");
 		private final Object neuronDXId = specialId("output:dx");
@@ -82,15 +83,16 @@ public interface NeuralNetwork {
 			requireNonNull(signalComputer, "Missing signal computer");
 			Neuron input = retrieveNeuron(inputRetriever);
 			Neuron output = retrieveNeuron(outputRetriever);
-			synapses.add(Synapse.create(input, output, signalComputer));
+			Synapse synapse = Synapse.create(input, signalComputer);
+			synapses2.put(new NeuronPair(input, output), synapse);
 			return this;
 		}
 
 		public NeuralNetwork build() {
 			requireNonNull(neurons.get(neuronDXId), "Missing " + neuronDXId);
 			requireNonNull(neurons.get(neuronDYId), "Missing " + neuronDYId);
-			List<Neuron> allNeurons = unmodifiableList(new ArrayList<>(neurons.values()));
-			List<Synapse> allSynapses = unmodifiableList(new ArrayList<>(synapses));
+			Map<Object, Neuron> allNeurons2 = unmodifiableMap(new LinkedHashMap<>(neurons));
+			Map<NeuronPair, Synapse> allSynapses2 = unmodifiableMap(new LinkedHashMap<>(synapses2));
 			return new NeuralNetwork() {
 
 				@Override
@@ -101,10 +103,11 @@ public interface NeuralNetwork {
 
 				@Override
 				public void fire() {
-					// TOOD Support loops
-					for (Neuron neuron : allNeurons) {
-						List<Double> inputSignals = allSynapses.stream()//
-								.filter(synapse -> synapse.output().equals(neuron))//
+					// TODO Support loops
+					for (Neuron neuron : allNeurons2.values()) {
+						List<Double> inputSignals = allSynapses2.entrySet().stream()//
+								.filter(entry -> entry.getKey().output().equals(neuron))//
+								.map(entry -> entry.getValue())//
 								.map(Synapse::signal)//
 								.collect(toList());
 						neuron.fire(inputSignals);
@@ -161,8 +164,11 @@ public interface NeuralNetwork {
 		}
 
 		public static interface NetworkPiece {
-			// TODO Generalize to set of neurons
+			@Deprecated
+			// TODO Replace by collection of neurons
 			Optional<Neuron> neuron();
+
+			Collection<Neuron> neurons();
 
 			Collection<Synapse> synapses();
 
@@ -172,6 +178,11 @@ public interface NeuralNetwork {
 					@Override
 					public Optional<Neuron> neuron() {
 						return Optional.of(neuron);
+					}
+
+					@Override
+					public Collection<Neuron> neurons() {
+						return List.of(neuron);
 					}
 
 					@Override
@@ -204,6 +215,11 @@ public interface NeuralNetwork {
 							}
 
 							@Override
+							public Collection<Neuron> neurons() {
+								return List.of(neuron);
+							}
+
+							@Override
 							public Collection<Synapse> synapses() {
 								return emptyList();
 							}
@@ -226,9 +242,15 @@ public interface NeuralNetwork {
 					}
 
 					@Override
+					public Collection<Neuron> neurons() {
+						return List.of(neuron);
+					}
+
+					@Override
 					public List<Synapse> synapses() {
 						return List.of(synapse);
 					}
+
 				};
 			};
 		}
@@ -261,6 +283,11 @@ public interface NeuralNetwork {
 						}
 
 						@Override
+						public Collection<Neuron> neurons() {
+							return List.of(neuron);
+						}
+
+						@Override
 						public Collection<Synapse> synapses() {
 							return synapses;
 						}
@@ -283,6 +310,11 @@ public interface NeuralNetwork {
 						@Override
 						public Optional<Neuron> neuron() {
 							return Optional.of(neuron);
+						}
+
+						@Override
+						public Collection<Neuron> neurons() {
+							return List.of(neuron);
 						}
 
 						@Override
@@ -378,21 +410,14 @@ public interface NeuralNetwork {
 
 		Neuron input();
 
-		Neuron output();
-
 		double signal();
 
-		static Synapse create(Neuron input, Neuron output, UnaryOperator<Double> signalComputer) {
+		static Synapse create(Neuron input, UnaryOperator<Double> signalComputer) {
 			return new Synapse() {
 
 				@Override
 				public Neuron input() {
 					return input;
-				}
-
-				@Override
-				public Neuron output() {
-					return output;
 				}
 
 				@Override
@@ -403,11 +428,11 @@ public interface NeuralNetwork {
 		}
 
 		static Synapse direct(Neuron input, Neuron output) {
-			return create(input, output, UnaryOperator.identity());
+			return create(input, UnaryOperator.identity());
 		}
 
 		static Synapse weighted(Neuron input, Neuron output, double weight) {
-			return create(input, output, signal -> signal * weight);
+			return create(input, signal -> signal * weight);
 		}
 
 	}
