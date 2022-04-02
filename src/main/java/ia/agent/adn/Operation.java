@@ -1,13 +1,13 @@
 package ia.agent.adn;
 
-import static ia.agent.NeuralNetwork.Builder2.*;
+import static ia.agent.NeuralNetwork.Builder.*;
 
 import java.util.Arrays;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-import ia.agent.NeuralNetwork.Builder2.BuilderStep;
+import ia.agent.NeuralNetwork.Builder.BuilderStep;
 
 public enum Operation {
 	CREATE_WITH_FIXED_SIGNAL(signal -> builder -> builder.createNeuronWith(fixedSignal(signal))), //

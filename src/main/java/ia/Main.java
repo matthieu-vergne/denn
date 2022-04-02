@@ -3,7 +3,6 @@ package ia;
 import static ia.terrain.TerrainInteractor.*;
 import static ia.terrain.TerrainInteractor.Condition.*;
 
-import java.awt.Color;
 import java.util.List;
 import java.util.Random;
 

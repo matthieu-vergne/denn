@@ -4,7 +4,7 @@ import java.nio.ByteBuffer;
 import java.util.LinkedList;
 import java.util.List;
 
-import ia.agent.NeuralNetwork.Builder2.BuilderStep;
+import ia.agent.NeuralNetwork.Builder.BuilderStep;
 
 public record Code(Operation operation, Double value) {
 	public static final int SIZE = 1 + Double.BYTES;
