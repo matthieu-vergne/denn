@@ -62,12 +62,14 @@ public interface TerrainInteractor {
 		return killAgents(selector.negate());
 	}
 
-	public static TerrainInteractor reproduceAgents(Reproducer reproducer, Mutator mutator, int agentsLimit, Random random) {
+	public static TerrainInteractor reproduceAgents(Reproducer reproducer, Mutator mutator, int agentsLimit,
+			Random random) {
 		StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
 		return terrain -> {
 			int agentsMax = terrain.width() * terrain.height();
 			if (agentsLimit > agentsMax) {
-				IllegalArgumentException tooHighLimit = new IllegalArgumentException("Agents limit must be at most " + agentsMax);
+				IllegalArgumentException tooHighLimit = new IllegalArgumentException(
+						"Agents limit must be at most " + agentsMax);
 				tooHighLimit.setStackTrace(stackTrace);
 				throw tooHighLimit;
 			}

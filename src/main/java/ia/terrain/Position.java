@@ -42,7 +42,7 @@ public class Position {
 	}
 
 	public Position move(Move move) {
-		return move(move.dX, move.dY);
+		return move(move.dX(), move.dY());
 	}
 
 	public Position move(int moveX, int moveY) {

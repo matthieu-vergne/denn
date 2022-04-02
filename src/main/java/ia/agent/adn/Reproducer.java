@@ -1,11 +1,8 @@
 package ia.agent.adn;
 
-import static java.util.stream.Collectors.*;
-
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
-import java.util.stream.Stream;
 
 @FunctionalInterface
 public interface Reproducer {
@@ -22,47 +19,32 @@ public interface Reproducer {
 
 	static Reproducer onRandomGenes(Random random) {
 		return (chromosome1, chromosome2) -> {
-			Stream<Gene> genes1 = chromosome1.genes();
-			Stream<Gene> genes2 = chromosome2.genes();
+			byte[] bytes1 = chromosome1.bytes();
+			byte[] bytes2 = chromosome2.bytes();
 
-			List<Gene> list1 = new LinkedList<>(genes1.collect(toList()));
-			List<Gene> list2 = new LinkedList<>(genes2.collect(toList()));
+			List<Code> codes1 = Code.deserializeAll(bytes1);
+			List<Code> codes2 = Code.deserializeAll(bytes2);
 
-			if (list1.size() < list2.size()) {
-				List<Gene> subList = list2.subList(0, list2.size()-list1.size());
-				list1.addAll(0, subList);
-			}
-			else if (list1.size() > list2.size()) {
-				List<Gene> subList = list1.subList(0, list1.size()-list2.size());
-				list2.addAll(0, subList);
+			if (codes1.size() < codes2.size()) {
+				List<Code> subList = codes2.subList(0, codes2.size() - codes1.size());
+				codes1.addAll(0, subList);
+			} else if (codes1.size() > codes2.size()) {
+				List<Code> subList = codes1.subList(0, codes1.size() - codes2.size());
+				codes2.addAll(0, subList);
 			}
 
-			// TODO Optimize perfs, potential infinite loop if weak statistics
-			while (true) {
-				Chromosome chromosome = generate(random, list1, list2);
-				try {
-					chromosome.createBrain();
-					return chromosome;
-				} catch (Exception cause) {
-				}
-			}
+			return generate(random, codes1, codes2);
 		};
 	}
 
-	static Chromosome generate(Random random, List<Gene> list1, List<Gene> list2) {
-		List<Gene> listChild = new LinkedList<>();
-		for (int i = 0; i < list1.size(); i++) {
-			List<Gene> parent = random.nextBoolean() ? list1 : list2;
-			Gene gene = parent.get(i);
-			listChild.add(gene);
+	static Chromosome generate(Random random, List<Code> codes1, List<Code> codes2) {
+		List<Code> codesChild = new LinkedList<>();
+		for (int i = 0; i < codes1.size(); i++) {
+			List<Code> parent = random.nextBoolean() ? codes1 : codes2;
+			Code code = parent.get(i);
+			codesChild.add(code);
 		}
-		Chromosome chromosome = new Chromosome() {
-
-			@Override
-			public Stream<Gene> genes() {
-				return listChild.stream();
-			}
-		};
-		return chromosome;
+		byte[] bytes = Code.serializeAll(codesChild);
+		return new Chromosome(bytes);
 	}
 }
