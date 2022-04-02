@@ -47,7 +47,7 @@ public class Main {
 		int agentsLimit = 10;
 
 		Reproducer reproducer = Reproducer.onRandomGenes(random);
-		Mutator mutator = Mutator.withProbability(random, 0.001);
+		Mutator mutator = Mutator.withProbability(random, 0.01);
 
 		AgentColorizer agentColorizer = AgentColorizer.basedOnChromosome();
 		Window.create(terrain, cellSize, agentColorizer, //

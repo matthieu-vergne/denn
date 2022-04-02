@@ -96,29 +96,35 @@ public interface NeuralNetwork {
 		}
 
 		public Builder moveTo(IndexRetriever indexRetriever) {
-			currentNeuronIndex = indexRetriever.indexFrom(this);
+			currentNeuronIndex = normalizeIndex(indexRetriever.indexFrom(this));
 			return this;
 		}
 
 		public Builder readSignalFrom(IndexRetriever indexRetriever) {
-			int neuronIndex = indexRetriever.indexFrom(this);
+			int neuronIndex = normalizeIndex(indexRetriever.indexFrom(this));
 			inputsMap.get(currentNeuronIndex).add(neuronIndex);
 			return this;
 		}
 
 		public Builder setDXAt(IndexRetriever indexRetriever) {
-			this.dXIndex = indexRetriever.indexFrom(this);
+			this.dXIndex = normalizeIndex(indexRetriever.indexFrom(this));
 			return this;
 		}
 
 		public Builder setDYAt(IndexRetriever indexRetriever) {
-			this.dYIndex = indexRetriever.indexFrom(this);
+			this.dYIndex = normalizeIndex(indexRetriever.indexFrom(this));
 			return this;
+		}
+
+		private int normalizeIndex(int index) {
+			return ((index % neurons.size()) + neurons.size()) % neurons.size();
 		}
 
 		public NeuralNetwork build() {
 			List<Neuron2> neurons = snapshot(this.neurons);
 			Map<Integer, List<Integer>> inputsMap = snapshot(this.inputsMap);
+			Integer dXIndex = this.dXIndex;
+			Integer dYIndex = this.dYIndex;
 			return new NeuralNetwork() {
 
 				@Override

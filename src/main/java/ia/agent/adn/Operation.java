@@ -30,9 +30,10 @@ public enum Operation {
 		return Integer.valueOf(binarySearch).byteValue();
 	}
 
-	public static Optional<Operation> deserialize(byte bytes) {
+	public static Optional<Operation> deserialize(byte bits) {
+		int normalizedBits = ((bits % values().length) + values().length) % values().length;
 		return Stream.of(Operation.values())//
-				.filter(op -> op.serialize() == bytes)//
+				.filter(op -> op.serialize() == normalizedBits)//
 				.findAny();
 	}
 }
