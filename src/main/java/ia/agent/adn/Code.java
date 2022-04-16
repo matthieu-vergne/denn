@@ -1,8 +1,6 @@
 package ia.agent.adn;
 
 import java.nio.ByteBuffer;
-import java.util.LinkedList;
-import java.util.List;
 
 import ia.agent.NeuralNetwork.Builder.BuilderStep;
 
@@ -30,20 +28,4 @@ public record Code(Operation operation, Double value) {
 		return new Code(operation, value);
 	}
 
-	public static byte[] serializeAll(List<Code> codes) {
-		ByteBuffer writeBuffer = ByteBuffer.allocate(codes.size() * Code.SIZE);
-		codes.stream().map(Code::serialize).forEach(writeBuffer::put);
-		return writeBuffer.array();
-	}
-
-	public static List<Code> deserializeAll(byte[] chromosomeBytes) {
-		ByteBuffer readBuffer = ByteBuffer.wrap(chromosomeBytes);
-		List<Code> decodedCodes = new LinkedList<>();
-		while (readBuffer.remaining() >= Code.SIZE) {
-			byte[] bytes = new byte[Code.SIZE];
-			readBuffer.get(bytes);
-			decodedCodes.add(Code.deserialize(bytes));
-		}
-		return decodedCodes;
-	}
 }

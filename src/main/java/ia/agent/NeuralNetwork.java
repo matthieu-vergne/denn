@@ -12,10 +12,9 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.function.UnaryOperator;
 import java.util.stream.DoubleStream;
 
-import ia.agent.adn.Code;
+import ia.agent.adn.Program;
 import ia.terrain.Move;
 import ia.terrain.Position;
 
@@ -30,18 +29,23 @@ public interface NeuralNetwork {
 	public static record NeuronPair(Object input, Object output) {
 	};
 
-	public static interface Neuron2 {
+	public static interface NeuralFunction {
+		Double compute(List<Double> inputs);
+	}
+
+	public static interface Neuron {
+
 		void fire(List<Double> inputs);
 
 		double signal();
 
-		public static Neuron2 onInputsFunction(Function<List<Double>, Double> function) {
-			return new Neuron2() {
+		public static Neuron onInputsFunction(NeuralFunction function) {
+			return new Neuron() {
 				private double signal;
 
 				@Override
 				public void fire(List<Double> inputs) {
-					signal = function.apply(inputs);
+					signal = function.compute(inputs);
 				}
 
 				@Override
@@ -51,12 +55,12 @@ public interface NeuralNetwork {
 			};
 		}
 
-		public static Neuron2 onSignalSupplier(Supplier<Double> supplier) {
+		public static Neuron onSignalSupplier(Supplier<Double> supplier) {
 			return onInputsFunction(inputs -> supplier.get());
 		}
 
-		public static Neuron2 onFixedSignal(double signal) {
-			return new Neuron2() {
+		public static Neuron onFixedSignal(double signal) {
+			return new Neuron() {
 				@Override
 				public void fire(List<Double> inputs) {
 					// Nothing to compute
@@ -72,47 +76,91 @@ public interface NeuralNetwork {
 
 	// TODO Remove X/Y in favor of general inputs?
 	// TODO Remove DX/DY in favor of letting read signal of any neuron?
-	public static class Builder {
-		private final List<Neuron2> neurons = new LinkedList<>();
+	public static class Builder implements Neural.Builder<NeuralNetwork> {
+		private final List<Neuron> neurons = new LinkedList<>();
 		private final Map<Integer, List<Integer>> inputsMap = new HashMap<>();
 		private int currentNeuronIndex = 0;
 		private Integer dXIndex = null;
 		private Integer dYIndex = null;
 
 		public Builder() {
-			Function<List<Double>, Double> noFunctionYet = inputs -> {
+			NeuralFunction noFunctionYet = inputs -> {
 				throw new IllegalStateException("Reserved neuron not replaced yet");
 			};
 			createNeuronWith(noFunctionYet);// Reserve index for X
 			createNeuronWith(noFunctionYet);// Reserve index for Y
 		}
 
-		public Builder createNeuronWith(Function<List<Double>, Double> function) {
-			Neuron2 neuron = Neuron2.onInputsFunction(function);
+		public Builder createNeuronWith(NeuralFunction function) {
+			Neuron neuron = Neuron.onInputsFunction(function);
 			neurons.add(neuron);
 			int neuronIndex = neurons.size() - 1;
 			inputsMap.put(neuronIndex, new LinkedList<>());
 			return this;
 		}
 
+		@Override
+		public Builder createNeuronWithFixedSignal(double signal) {
+			return createNeuronWith(fixedSignal(signal));
+		}
+
+		@Override
+		public Builder createNeuronWithWeightedSumFunction(double weight) {
+			return createNeuronWith(weightedSumFunction(weight));
+		}
+		
+		@Override
+		public Builder createNeuronWithSumFunction() {
+			return createNeuronWith(sumFunction());
+		}
+		
+		@Override
+		public Builder createNeuronWithMinFunction() {
+			return createNeuronWith(minFunction());
+		}
+		
+		@Override
+		public Builder createNeuronWithMaxFunction() {
+			return createNeuronWith(maxFunction());
+		}
+
 		public Builder moveTo(IndexRetriever indexRetriever) {
-			currentNeuronIndex = normalizeIndex(indexRetriever.indexFrom(this));
+			return moveTo(indexRetriever.indexFrom(this));
+		}
+
+		@Override
+		public Builder moveTo(int neuronIndex) {
+			currentNeuronIndex = normalizeIndex(neuronIndex);
 			return this;
 		}
 
 		public Builder readSignalFrom(IndexRetriever indexRetriever) {
-			int neuronIndex = normalizeIndex(indexRetriever.indexFrom(this));
-			inputsMap.get(currentNeuronIndex).add(neuronIndex);
+			return readSignalFrom(indexRetriever.indexFrom(this));
+		}
+
+		@Override
+		public Builder readSignalFrom(int neuronIndex) {
+			inputsMap.get(currentNeuronIndex).add(normalizeIndex(neuronIndex));
 			return this;
 		}
 
 		public Builder setDXAt(IndexRetriever indexRetriever) {
-			this.dXIndex = normalizeIndex(indexRetriever.indexFrom(this));
+			return setDXAt(indexRetriever.indexFrom(this));
+		}
+
+		@Override
+		public Builder setDXAt(int neuronIndex) {
+			this.dXIndex = normalizeIndex(neuronIndex);
 			return this;
 		}
 
 		public Builder setDYAt(IndexRetriever indexRetriever) {
-			this.dYIndex = normalizeIndex(indexRetriever.indexFrom(this));
+			return setDYAt(indexRetriever.indexFrom(this));
+		}
+
+		@Override
+		public Builder setDYAt(int neuronIndex) {
+			this.dYIndex = normalizeIndex(neuronIndex);
 			return this;
 		}
 
@@ -120,8 +168,9 @@ public interface NeuralNetwork {
 			return ((index % neurons.size()) + neurons.size()) % neurons.size();
 		}
 
+		@Override
 		public NeuralNetwork build() {
-			List<Neuron2> neurons = snapshot(this.neurons);
+			List<Neuron> neurons = snapshot(this.neurons);
 			Map<Integer, List<Integer>> inputsMap = snapshot(this.inputsMap);
 			Integer dXIndex = this.dXIndex;
 			Integer dYIndex = this.dYIndex;
@@ -129,14 +178,14 @@ public interface NeuralNetwork {
 
 				@Override
 				public void setInputs(Position position) {
-					neurons.set(0, Neuron2.onFixedSignal(position.x));
-					neurons.set(1, Neuron2.onFixedSignal(position.y));
+					neurons.set(0, Neuron.onFixedSignal(position.x));
+					neurons.set(1, Neuron.onFixedSignal(position.y));
 				}
 
 				@Override
 				public void fire() {
 					for (int neuronIndex = 0; neuronIndex < neurons.size(); neuronIndex++) {
-						Neuron2 neuron = neurons.get(neuronIndex);
+						Neuron neuron = neurons.get(neuronIndex);
 						List<Double> inputSignals = inputsMap.get(neuronIndex).stream()//
 								.map(inputIndex -> neurons.get(inputIndex))//
 								.map(inputNeuron -> inputNeuron.signal())//
@@ -165,7 +214,7 @@ public interface NeuralNetwork {
 							entry -> new ArrayList<>(entry.getValue())));
 		}
 
-		private ArrayList<Neuron2> snapshot(List<Neuron2> neurons) {
+		private ArrayList<Neuron> snapshot(List<Neuron> neurons) {
 			return new ArrayList<>(neurons);
 		}
 
@@ -199,7 +248,7 @@ public interface NeuralNetwork {
 		}
 
 		public static IndexRetriever neuronAt(int absoluteIndex) {
-			return builder -> absoluteIndex % builder.neurons.size();
+			return builder -> absoluteIndex;
 		}
 
 		public static IndexRetriever xNeuron() {
@@ -210,36 +259,36 @@ public interface NeuralNetwork {
 			return builder -> 1;
 		}
 
-		public static Function<List<Double>, Double> fixedSignal(double signal) {
+		public static NeuralFunction fixedSignal(double signal) {
 			return inputs -> signal;
 		}
 
-		public static Function<List<Double>, Double> suppliedSignal(Supplier<Double> signalSupplier) {
+		public static NeuralFunction suppliedSignal(Supplier<Double> signalSupplier) {
 			return inputs -> signalSupplier.get();
 		}
 
-		public static Function<List<Double>, Double> streamFunction(Function<DoubleStream, Double> function) {
+		public static NeuralFunction streamFunction(Function<DoubleStream, Double> function) {
 			return inputs -> function.apply(inputs.stream().mapToDouble(d -> d));
 		}
 
-		public static Function<List<Double>, Double> sumFunction() {
+		public static NeuralFunction sumFunction() {
 			return streamFunction(inputs -> inputs.sum());
 		}
 
-		public static Function<List<Double>, Double> weightFunction(double weight) {
+		public static NeuralFunction weightedSumFunction(double weight) {
 			return streamFunction(inputs -> inputs.sum() * weight);
 		}
 
-		public static Function<List<Double>, Double> minFunction() {
+		public static NeuralFunction minFunction() {
 			return streamFunction(inputs -> inputs.min().orElse(0));
 		}
 
-		public static Function<List<Double>, Double> maxFunction() {
+		public static NeuralFunction maxFunction() {
 			return streamFunction(inputs -> inputs.max().orElse(0));
 		}
 
 		public static interface BuilderStep {
-			void apply(Builder builder);
+			void apply(Neural.Builder<?> builder);
 		}
 	}
 
@@ -256,7 +305,7 @@ public interface NeuralNetwork {
 					// targetX
 					.createNeuronWith(fixedSignal(position.x))//
 					// diffX
-					.createNeuronWith(weightFunction(-1))//
+					.createNeuronWith(weightedSumFunction(-1))//
 					.moveTo(lastNeuron())//
 					.readSignalFrom(xNeuron())//
 					.createNeuronWith(sumFunction())//
@@ -281,7 +330,7 @@ public interface NeuralNetwork {
 					// targetY
 					.createNeuronWith(fixedSignal(position.y))//
 					// diffY
-					.createNeuronWith(weightFunction(-1))//
+					.createNeuronWith(weightedSumFunction(-1))//
 					.moveTo(lastNeuron())//
 					.readSignalFrom(yNeuron())//
 					.createNeuronWith(sumFunction())//
@@ -390,120 +439,12 @@ public interface NeuralNetwork {
 			return neuralNetwork;
 		}
 
-		public NeuralNetwork decode(List<Code> codes) {
-			NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
-			codes.stream().map(Code::resolve).forEach(step -> step.apply(builder));
+		public NeuralNetwork execute(Program program) {
+			Neural.Builder<NeuralNetwork> builder = new NeuralNetwork.Builder();
+			program.executeOn(builder);
 			return builder.build();
 		}
+
+		
 	}
-
-	static interface Neuron {
-		void fire(List<Double> inputSignals);
-
-		double signal();
-
-		static Neuron create(Function<List<Double>, Double> signalComputer) {
-			return new Neuron() {
-
-				double signal;
-
-				@Override
-				public void fire(List<Double> inputSignals) {
-					signal = signalComputer.apply(inputSignals);
-				}
-
-				@Override
-				public double signal() {
-					return signal;
-				}
-			};
-		}
-
-		static Neuron createOnStream(Function<DoubleStream, Double> signalComputer) {
-			return new Neuron() {
-
-				double signal;
-
-				@Override
-				public void fire(List<Double> inputSignals) {
-					signal = signalComputer.apply(inputSignals.stream().mapToDouble(d -> d));
-				}
-
-				@Override
-				public double signal() {
-					return signal;
-				}
-			};
-		}
-
-		default Neuron named(String id) {
-			Neuron neuron = this;
-			return new Neuron() {
-
-				@Override
-				public void fire(List<Double> inputSignals) {
-					neuron.fire(inputSignals);
-				}
-
-				@Override
-				public double signal() {
-					return neuron.signal();
-				}
-
-				@Override
-				public String toString() {
-					return id;
-				}
-			};
-		}
-
-		static Neuron withoutInputs(double signal) {
-			return create(inputSignals -> signal);
-		}
-
-		static Neuron withoutInputs(Supplier<Double> signalSource) {
-			return create(inputSignals -> signalSource.get());
-		}
-
-		static Neuron passingFirstInput() {
-			return create(inputSignals -> inputSignals.iterator().next());
-		}
-
-		static Neuron summingInputs() {
-			return createOnStream(inputSignals -> inputSignals.sum());
-		}
-
-	}
-
-	static interface Synapse {
-
-		Neuron input();
-
-		double signal();
-
-		static Synapse create(Neuron input, UnaryOperator<Double> signalComputer) {
-			return new Synapse() {
-
-				@Override
-				public Neuron input() {
-					return input;
-				}
-
-				@Override
-				public double signal() {
-					return signalComputer.apply(input.signal());
-				}
-			};
-		}
-
-		static Synapse direct(Neuron input) {
-			return create(input, UnaryOperator.identity());
-		}
-
-		static Synapse weighted(Neuron input, double weight) {
-			return create(input, signal -> signal * weight);
-		}
-
-	}
-
 }

@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
 
-import ia.agent.NeuralNetwork.Builder;
 import ia.terrain.Move;
 import ia.terrain.Position;
 
@@ -18,7 +17,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testInitialBuilderReturnsWorkingNetwork() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		NeuralNetwork network = builder.build();
 		assertDoesNotThrow(() -> network.setInputs(Position.at(654, 123)));
 		assertDoesNotThrow(() -> network.fire());
@@ -27,7 +26,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testInitialBuilderReturnsNonMovingNetwork() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		NeuralNetwork network = builder.build();
 		network.setInputs(Position.at(651, -3254));
 		network.fire();
@@ -36,7 +35,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testDXNeuronOnXNeuronProducesDXAtX() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.setDXAt(xNeuron());
 		NeuralNetwork network = builder.build();
 		
@@ -48,7 +47,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testDYNeuronOnYNeuronProducesDYAtY() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.setDYAt(yNeuron());
 		NeuralNetwork network = builder.build();
 		
@@ -60,7 +59,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testDXNeuronOnYNeuronProducesDXAtY() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.setDXAt(yNeuron());
 		NeuralNetwork network = builder.build();
 		
@@ -72,7 +71,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testDYNeuronOnXNeuronProducesDYAtX() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.setDYAt(xNeuron());
 		NeuralNetwork network = builder.build();
 		
@@ -84,7 +83,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testDXNeuronOnNewNeuronProducesDXAtNewNeuronRoundedSignal() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(inputs -> 123.8);
 		builder.setDXAt(lastNeuron());
 		NeuralNetwork network = builder.build();
@@ -96,7 +95,7 @@ class NeuralNetworkBuilderTest {
 
 	@Test
 	void testDYNeuronOnNewNeuronProducesDYAtNewNeuronRoundedSignal() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(inputs -> 123.8);
 		builder.setDYAt(lastNeuron());
 		NeuralNetwork network = builder.build();
@@ -108,7 +107,7 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testFixedSignalNeuronProvidesSpecifiedSignal() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(123));
 		builder.setDXAt(lastNeuron());
 		NeuralNetwork network = builder.build();
@@ -120,7 +119,7 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testMoveToLastNeuronAllowsCurrentNeuronToReferToLastNeuron() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(123));
 		builder.moveTo(lastNeuron());
 		builder.setDXAt(currentNeuron());
@@ -133,7 +132,7 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testMoveToPreviousNeuronMovesToNeuronJustBeforeCurrent() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(1));
 		builder.createNeuronWith(fixedSignal(2));
 		builder.moveTo(lastNeuron());
@@ -148,7 +147,7 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testMoveToNextNeuronMovesToNeuronJustAfterCurrent() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(1));
 		builder.moveTo(lastNeuron());
 		builder.createNeuronWith(fixedSignal(2));
@@ -163,7 +162,7 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testSumNeuronSumsInputSignals() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(1));
 		builder.createNeuronWith(fixedSignal(2));
 		builder.createNeuronWith(fixedSignal(3));
@@ -182,11 +181,11 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testWeightedNeuronMultiplyAndSumInputSignals() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(1));
 		builder.createNeuronWith(fixedSignal(2));
 		builder.createNeuronWith(fixedSignal(3));
-		builder.createNeuronWith(weightFunction(-5));
+		builder.createNeuronWith(weightedSumFunction(-5));
 		builder.moveTo(lastNeuron());
 		builder.readSignalFrom(relativeNeuron(-1));
 		builder.readSignalFrom(relativeNeuron(-2));
@@ -201,7 +200,7 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testMinNeuronReturnsMinInputSignal() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(1));
 		builder.createNeuronWith(fixedSignal(2));
 		builder.createNeuronWith(fixedSignal(3));
@@ -220,7 +219,7 @@ class NeuralNetworkBuilderTest {
 	
 	@Test
 	void testMaxNeuronReturnsMaxInputSignal() {
-		Builder builder = new NeuralNetwork.Builder();
+		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		builder.createNeuronWith(fixedSignal(1));
 		builder.createNeuronWith(fixedSignal(2));
 		builder.createNeuronWith(fixedSignal(3));

@@ -22,8 +22,8 @@ public interface Reproducer {
 			byte[] bytes1 = chromosome1.bytes();
 			byte[] bytes2 = chromosome2.bytes();
 
-			List<Code> codes1 = Code.deserializeAll(bytes1);
-			List<Code> codes2 = Code.deserializeAll(bytes2);
+			List<Code> codes1 = Program.deserialize(bytes1).codes();
+			List<Code> codes2 = Program.deserialize(bytes2).codes();
 
 			if (codes1.size() < codes2.size()) {
 				List<Code> subList = codes2.subList(0, codes2.size() - codes1.size());
@@ -37,6 +37,8 @@ public interface Reproducer {
 		};
 	}
 
+	
+
 	static Chromosome generate(Random random, List<Code> codes1, List<Code> codes2) {
 		List<Code> codesChild = new LinkedList<>();
 		for (int i = 0; i < codes1.size(); i++) {
@@ -44,7 +46,7 @@ public interface Reproducer {
 			Code code = parent.get(i);
 			codesChild.add(code);
 		}
-		byte[] bytes = Code.serializeAll(codesChild);
+		byte[] bytes = new Program(codesChild).serialize();
 		return new Chromosome(bytes);
 	}
 }

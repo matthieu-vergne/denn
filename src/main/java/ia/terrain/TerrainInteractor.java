@@ -83,7 +83,7 @@ public interface TerrainInteractor {
 					Chromosome chromosome2 = parent2.chromosome();
 					Chromosome chromosomeChild = reproducer.reproduce(chromosome1, chromosome2);
 					chromosomeChild = mutator.mutate(chromosomeChild);
-					Agent child = Agent.create(chromosomeChild);
+					Agent child = Agent.createFromChromosome(chromosomeChild);
 					terrain.placeAgent(child, freeRandomPosition.next());
 				}
 			};
