@@ -17,7 +17,7 @@ public interface Reproducer {
 		return (chromosome1, chromosome2) -> random.nextBoolean() ? chromosome1 : chromosome2;
 	}
 
-	static Reproducer onRandomGenes(Random random) {
+	static Reproducer onRandomCodes(Random random) {
 		return (chromosome1, chromosome2) -> {
 			byte[] bytes1 = chromosome1.bytes();
 			byte[] bytes2 = chromosome2.bytes();

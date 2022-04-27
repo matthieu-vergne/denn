@@ -9,7 +9,6 @@ import java.util.Random;
 import ia.agent.Agent;
 import ia.agent.Neural;
 import ia.agent.Neural.Factory;
-import ia.agent.NeuralNetwork;
 import ia.agent.adn.Mutator;
 import ia.agent.adn.Program;
 import ia.agent.adn.Reproducer;
@@ -26,7 +25,7 @@ public class Main {
 		Terrain terrain = Terrain.createWithSize(10, 11);
 		int cellSize = 30;
 
-		// TODO Generate codes from builder calls
+		// TODO Use same network, adapt only weights
 		Factory<Program> programFactory = Neural.Factory.on(Program.Builder::new);
 		terrain.placeAgent(Agent.createFromProgram(programFactory.moveDownRight()), terrain.minPosition());
 		terrain.placeAgent(Agent.createFromProgram(programFactory.moveUpLeft()), terrain.maxPosition());
@@ -35,10 +34,10 @@ public class Main {
 //		terrain.placeAgent(Agent.create(factory.moveRandomly()), Position.at(3, 3));
 		int agentsLimit = 10;
 
-		Reproducer reproducer = Reproducer.onRandomGenes(random);
-		Mutator mutator = Mutator.withProbability(random, 0.01);
+		Reproducer reproducer = Reproducer.onRandomCodes(random);
+		Mutator mutator = Mutator.onWeights(random, 0.01);
 
-		AgentColorizer agentColorizer = AgentColorizer.basedOnChromosome2();
+		AgentColorizer agentColorizer = AgentColorizer.pickingOnWeights();
 		Window.create(terrain, cellSize, agentColorizer, //
 				List.of(//
 						Button.create("Next", moveAgents().on(terrain)), //

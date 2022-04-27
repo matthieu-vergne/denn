@@ -108,17 +108,17 @@ public interface NeuralNetwork {
 		public Builder createNeuronWithWeightedSumFunction(double weight) {
 			return createNeuronWith(weightedSumFunction(weight));
 		}
-		
+
 		@Override
 		public Builder createNeuronWithSumFunction() {
 			return createNeuronWith(sumFunction());
 		}
-		
+
 		@Override
 		public Builder createNeuronWithMinFunction() {
 			return createNeuronWith(minFunction());
 		}
-		
+
 		@Override
 		public Builder createNeuronWithMaxFunction() {
 			return createNeuronWith(maxFunction());
@@ -202,6 +202,7 @@ public interface NeuralNetwork {
 				private Integer readCoordDelta(Integer optionalIndex) {
 					return Optional.ofNullable(optionalIndex)//
 							.map(index -> (int) Math.round(neurons.get(index).signal()))//
+							.map(move -> Math.max(-1, Math.min(move, 1)))//
 							.orElse(0);
 				}
 			};
@@ -445,6 +446,5 @@ public interface NeuralNetwork {
 			return builder.build();
 		}
 
-		
 	}
 }

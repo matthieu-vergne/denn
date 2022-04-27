@@ -6,7 +6,6 @@ import java.util.LinkedList;
 import java.util.List;
 
 import ia.agent.Neural;
-import ia.agent.NeuralNetwork;
 
 public class Program {
 
