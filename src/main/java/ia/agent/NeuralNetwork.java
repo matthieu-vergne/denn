@@ -294,10 +294,11 @@ public interface NeuralNetwork {
 	}
 
 	public static class Factory {
-
+		private final Supplier<Neural.Builder<NeuralNetwork>> networkBuilderGenerator;
 		private final Random random;
 
-		public Factory(Random random) {
+		public Factory(Supplier<Neural.Builder<NeuralNetwork>> networkBuilderGenerator, Random random) {
+			this.networkBuilderGenerator = networkBuilderGenerator;
 			this.random = random;
 		}
 
@@ -441,7 +442,7 @@ public interface NeuralNetwork {
 		}
 
 		public NeuralNetwork execute(Program program) {
-			Neural.Builder<NeuralNetwork> builder = new NeuralNetwork.Builder();
+			Neural.Builder<NeuralNetwork> builder = networkBuilderGenerator.get();
 			program.executeOn(builder);
 			return builder.build();
 		}

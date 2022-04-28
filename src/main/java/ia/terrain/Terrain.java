@@ -42,6 +42,10 @@ public class Terrain {
 		return Position.at(width - 1, height - 1);
 	}
 
+	public Position centerPosition() {
+		return Position.at(width / 2, height / 2);
+	}
+
 	private final Map<Agent, Position> agentsPosition = new HashMap<>();
 
 	public Stream<Agent> agents() {

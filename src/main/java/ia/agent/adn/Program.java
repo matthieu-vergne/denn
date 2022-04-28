@@ -41,7 +41,7 @@ public class Program {
 	}
 
 	public static class Builder implements Neural.Builder<Program> {
-		List<Code> codes = new LinkedList<>();
+		private final List<Code> codes = new LinkedList<>();
 
 		@Override
 		public Builder createNeuronWithFixedSignal(double signal) {

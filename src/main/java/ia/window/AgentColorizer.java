@@ -248,7 +248,7 @@ public interface AgentColorizer {
 								buffer1.put(buffer2.flip());
 							});
 					int rgba = pickBits(buffer.array(), Integer.SIZE, UnaryOperator.identity()).getInt();
-					return new Color(rgba, true);
+					return new Color(rgba, false);
 				}
 
 			};
@@ -269,7 +269,7 @@ public interface AgentColorizer {
 		return colors.stream().map(AgentColorizer::stringOf).collect(joining(" "));
 	}
 
-	static BinaryOperator<Color> colorAccumulator(BinaryOperator<Integer> channelAccumulator) {
+	private static BinaryOperator<Color> colorAccumulator(BinaryOperator<Integer> channelAccumulator) {
 		return (c1, c2) -> new Color(//
 				channelAccumulator.apply(c1.getRed(), c2.getRed()), //
 				channelAccumulator.apply(c1.getGreen(), c2.getGreen()), //

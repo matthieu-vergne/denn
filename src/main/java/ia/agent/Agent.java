@@ -9,6 +9,7 @@ import ia.terrain.Position;
 
 public class Agent {
 
+	
 	private final Chromosome chromosome;
 	private final NeuralNetwork neuralNetwork;
 
@@ -17,14 +18,14 @@ public class Agent {
 		this.neuralNetwork = requireNonNull(neuralNetwork, "No neural network provided");
 	}
 
-	public static Agent createFromChromosome(Chromosome chromosome) {
+	public static Agent createFromChromosome(NeuralNetwork.Factory networkFactory, Chromosome chromosome) {
 		byte[] bytes = chromosome.bytes();
 		Program program = Program.deserialize(bytes);
-		return new Agent(chromosome, new NeuralNetwork.Factory(null).execute(program));
+		return new Agent(chromosome, networkFactory.execute(program));
 	}
 
-	public static Agent createFromProgram(Program program) {
-		return createFromChromosome(new Chromosome(program.serialize()));
+	public static Agent createFromProgram(NeuralNetwork.Factory networkFactory, Program program) {
+		return createFromChromosome(networkFactory, new Chromosome(program.serialize()));
 	}
 
 	public Position decideNextPosition(Position position) {

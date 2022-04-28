@@ -10,22 +10,21 @@ import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import ia.agent.Agent;
+import ia.agent.NeuralNetwork;
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Mutator;
 import ia.agent.adn.Reproducer;
+import ia.window.Window.Button;
 
 public interface TerrainInteractor {
-	public Runnable on(Terrain terrain);
+	public Button.Action on(Terrain terrain);
 
 	default TerrainInteractor then(TerrainInteractor nextInteractor) {
 		TerrainInteractor previousInteractor = this;
 		return terrain -> {
-			Runnable previousAction = previousInteractor.on(terrain);
-			Runnable nextAction = nextInteractor.on(terrain);
-			return () -> {
-				previousAction.run();
-				nextAction.run();
-			};
+			Button.Action previousAction = previousInteractor.on(terrain);
+			Button.Action nextAction = nextInteractor.on(terrain);
+			return previousAction.then(nextAction);
 		};
 	}
 
@@ -62,7 +61,7 @@ public interface TerrainInteractor {
 		return killAgents(selector.negate());
 	}
 
-	public static TerrainInteractor reproduceAgents(Reproducer reproducer, Mutator mutator, int agentsLimit,
+	public static TerrainInteractor reproduceAgents(NeuralNetwork.Factory networkFactory, Reproducer reproducer, Mutator mutator, int agentsLimit,
 			Random random) {
 		StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
 		return terrain -> {
@@ -83,7 +82,7 @@ public interface TerrainInteractor {
 					Chromosome chromosome2 = parent2.chromosome();
 					Chromosome chromosomeChild = reproducer.reproduce(chromosome1, chromosome2);
 					chromosomeChild = mutator.mutate(chromosomeChild);
-					Agent child = Agent.createFromChromosome(chromosomeChild);
+					Agent child = Agent.createFromChromosome(networkFactory, chromosomeChild);
 					terrain.placeAgent(child, freeRandomPosition.next());
 				}
 			};
@@ -114,19 +113,27 @@ public interface TerrainInteractor {
 
 	public static class Condition {
 		public static BiPredicate<Terrain, Agent> withXAbove(int xLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).x > xLimit;
+			return (terrain, agent) -> terrain.getAgentPosition(agent).x >= xLimit;
 		}
 
 		public static BiPredicate<Terrain, Agent> withXBelow(int xLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).x < xLimit;
+			return (terrain, agent) -> terrain.getAgentPosition(agent).x <= xLimit;
+		}
+
+		public static BiPredicate<Terrain, Agent> withXIn(int xMin, int xMax) {
+			return withXAbove(xMin).and(withXBelow(xMax));
 		}
 
 		public static BiPredicate<Terrain, Agent> withYAbove(int yLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).y > yLimit;
+			return (terrain, agent) -> terrain.getAgentPosition(agent).y >= yLimit;
 		}
 
 		public static BiPredicate<Terrain, Agent> withYBelow(int yLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).y < yLimit;
+			return (terrain, agent) -> terrain.getAgentPosition(agent).y <= yLimit;
+		}
+
+		public static BiPredicate<Terrain, Agent> withYIn(int yMin, int yMax) {
+			return withYAbove(yMin).and(withYBelow(yMax));
 		}
 	}
 }
