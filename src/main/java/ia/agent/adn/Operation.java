@@ -13,6 +13,7 @@ public enum Operation {
 	CREATE_WITH_SUM_FUNCTION(signal -> builder -> builder.createNeuronWithSumFunction()), //
 	CREATE_WITH_MIN_FUNCTION(signal -> builder -> builder.createNeuronWithMinFunction()), //
 	CREATE_WITH_MAX_FUNCTION(signal -> builder -> builder.createNeuronWithMaxFunction()), //
+	CREATE_WITH_RANDOM_SIGNAL(signal -> builder -> builder.createNeuronWithRandomSignal()), //
 	MOVE_TO(signal -> builder -> builder.moveTo(signal.intValue())), //
 	READ_SIGNAL_FROM(signal -> builder -> builder.readSignalFrom(signal.intValue())), //
 	SET_DX(index -> builder -> builder.setDXAt(index.intValue())), //

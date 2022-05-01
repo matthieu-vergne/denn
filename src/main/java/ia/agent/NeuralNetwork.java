@@ -1,6 +1,7 @@
 package ia.agent;
 
 import static ia.agent.NeuralNetwork.Builder.*;
+import static java.lang.Math.*;
 import static java.util.stream.Collectors.*;
 
 import java.util.ArrayList;
@@ -79,11 +80,23 @@ public interface NeuralNetwork {
 	public static class Builder implements Neural.Builder<NeuralNetwork> {
 		private final List<Neuron> neurons = new LinkedList<>();
 		private final Map<Integer, List<Integer>> inputsMap = new HashMap<>();
+		private final Rand random;
 		private int currentNeuronIndex = 0;
 		private Integer dXIndex = null;
 		private Integer dYIndex = null;
-
+		
+		public static interface Rand {
+			double next();
+		}
+		
 		public Builder() {
+			this(() -> {
+				throw new RuntimeException("No random provided");
+			});
+		}
+		
+		public Builder(Rand random) {
+			this.random = random;
 			NeuralFunction noFunctionYet = inputs -> {
 				throw new IllegalStateException("Reserved neuron not replaced yet");
 			};
@@ -97,6 +110,11 @@ public interface NeuralNetwork {
 			int neuronIndex = neurons.size() - 1;
 			inputsMap.put(neuronIndex, new LinkedList<>());
 			return this;
+		}
+		
+		@Override
+		public ia.agent.Neural.Builder<NeuralNetwork> createNeuronWithRandomSignal() {
+			return createNeuronWith(suppliedSignal(() -> random.next()));
 		}
 
 		@Override
@@ -196,14 +214,19 @@ public interface NeuralNetwork {
 
 				@Override
 				public Move output() {
-					return Move.create(readCoordDelta(dXIndex), readCoordDelta(dYIndex));
+					return Move.create(//
+							toUnitaryMove(readSignal(neurons, dXIndex)), //
+							toUnitaryMove(readSignal(neurons, dYIndex))//
+					);
 				}
 
-				private Integer readCoordDelta(Integer optionalIndex) {
-					return Optional.ofNullable(optionalIndex)//
-							.map(index -> (int) Math.round(neurons.get(index).signal()))//
-							.map(move -> Math.max(-1, Math.min(move, 1)))//
-							.orElse(0);
+				private Integer toUnitaryMove(double signal) {
+					int requestedMove = (int) round(signal);
+					return max(-1, min(requestedMove, 1));
+				}
+
+				private double readSignal(List<Neuron> neurons, Integer optionalIndex) {
+					return Optional.ofNullable(optionalIndex).map(neurons::get).map(Neuron::signal).orElse(0.0);
 				}
 			};
 		}
@@ -303,7 +326,7 @@ public interface NeuralNetwork {
 		}
 
 		public NeuralNetwork moveToward(Position position) {
-			return new NeuralNetwork.Builder()//
+			return new NeuralNetwork.Builder(random::nextDouble)//
 					// targetX
 					.createNeuronWith(fixedSignal(position.x))//
 					// diffX
@@ -392,7 +415,7 @@ public interface NeuralNetwork {
 		}
 
 		public NeuralNetwork moveStraight(int dXSignal, int dYSignal) {
-			return new NeuralNetwork.Builder()//
+			return new NeuralNetwork.Builder(random::nextDouble)//
 					.createNeuronWith(fixedSignal(dXSignal))//
 					.setDXAt(lastNeuron())//
 					.createNeuronWith(fixedSignal(dYSignal))//
@@ -402,7 +425,7 @@ public interface NeuralNetwork {
 
 		public NeuralNetwork moveRandomly() {
 			Supplier<Double> randomSupplier = () -> (double) random.nextInt(3) - 1;
-			NeuralNetwork neuralNetwork = new NeuralNetwork.Builder()//
+			NeuralNetwork neuralNetwork = new NeuralNetwork.Builder(random::nextDouble)//
 					// randX - lower bound
 					.createNeuronWith(suppliedSignal(randomSupplier))//
 					.createNeuronWith(fixedSignal(-1))//

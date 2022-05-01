@@ -1,7 +1,9 @@
 package ia.window;
 
 import static java.awt.Color.*;
+import static java.time.Instant.*;
 import static java.util.stream.Collectors.*;
+import static javax.swing.SwingUtilities.*;
 import static javax.swing.WindowConstants.*;
 
 import java.awt.Color;
@@ -14,16 +16,21 @@ import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.time.Instant;
+import java.util.Collection;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import javax.swing.AbstractAction;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
-import javax.swing.SwingUtilities;
 
 import ia.terrain.Position;
 import ia.terrain.Terrain;
@@ -32,16 +39,26 @@ import ia.window.Window.Button.Action;
 public class Window {
 
 	private final JFrame frame;
-	private final int iterateStepsPerSecond;
+	private final int compositeActionsPerSecond;
 	private final JPanel buttonsPanel;
+	private final Collection<Function<Position, Color>> filters = new LinkedList<>();
+	private boolean isWindowClosed = false;
 
 	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<Button> buttons,
-			int iterateStepsPerSecond) {
+			int compositeActionsPerSecond) {
 		this.frame = new JFrame("AI");
 
+		frame.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosed(WindowEvent e) {
+				isWindowClosed = true;
+				frame.removeWindowListener(this);
+			}
+		});
+
+		this.compositeActionsPerSecond = compositeActionsPerSecond;
 		JPanel canvas = createCanvas(terrain, agentColorizer);
 		this.buttonsPanel = createButtonsPanel(withRepaint(buttons, canvas));
-		this.iterateStepsPerSecond = iterateStepsPerSecond;
 
 		Container contentPane = frame.getContentPane();
 		contentPane.setLayout(new GridBagLayout());
@@ -80,36 +97,50 @@ public class Window {
 	}
 
 	private Function<? super Button, ? extends Button> toButtonWithRepaint(JPanel canvas) {
-		return button -> Button.create(button.title, () -> {
+		int stepPeriodMillis = 1000 / compositeActionsPerSecond;
+		return button -> {
 			Action action = button.action;
 			if (action instanceof Button.CompositeAction comp) {
-				Iterator<Action> iterator = comp.steps().iterator();
-				disableButtons();
-				SwingUtilities.invokeLater(new Runnable() {
-					@Override
-					public void run() {
-						if (!iterator.hasNext()) {
-							enableButtons();
-							return;
-						}
+				return Button.create(button.title, () -> {
+					disableButtons();
 
-						iterator.next().execute();
-						canvas.repaint();
-						try {
-							Thread.sleep(1000 / iterateStepsPerSecond);
-						} catch (InterruptedException cause) {
-							cause.printStackTrace();
-							enableButtons();
+					Iterator<Action> iterator = comp.steps().iterator();
+					Runnable[] tasks = { null, null };
+					int nextStep = 0;
+					int wait = 1;
+					Instant[] reservedTime = { null };
+
+					tasks[nextStep] = () -> {
+						if (isWindowClosed) {
 							return;
 						}
-						SwingUtilities.invokeLater(this);
-					}
+						if (iterator.hasNext()) {
+							reservedTime[0] = now().plusMillis(stepPeriodMillis);
+							iterator.next().execute();
+							canvas.repaint();
+							invokeLater(tasks[wait]);
+						} else {
+							enableButtons();
+						}
+					};
+
+					tasks[wait] = () -> {
+						if (isWindowClosed) {
+							return;
+						}
+						int next = now().isAfter(reservedTime[0]) ? nextStep : wait;
+						invokeLater(tasks[next]);
+					};
+
+					invokeLater(tasks[nextStep]);
 				});
 			} else {
-				action.execute();
-				canvas.repaint();
+				return Button.create(button.title, () -> {
+					action.execute();
+					canvas.repaint();
+				});
 			}
-		});
+		};
 	}
 
 	@SuppressWarnings("serial")
@@ -118,6 +149,27 @@ public class Window {
 			@Override
 			public void paint(Graphics graphics) {
 				drawTerrain(terrain, graphics, agentColorizer);
+
+				Graphics2D graphics2D = (Graphics2D) graphics;
+				Rectangle clipBounds = graphics2D.getClipBounds();
+				int clipWidth = clipBounds.width;
+				int clipHeight = clipBounds.height;
+
+				// Filters
+				double width = (double) clipWidth / terrain.width();
+				double height = (double) clipHeight / terrain.height();
+				for (int px = 0; px < terrain.width(); px++) {
+					for (int py = 0; py < terrain.height(); py++) {
+						Position position = Position.at(px, py);
+						filters.forEach(filter -> {
+							Color color = filter.apply(position);
+							int x = (int) (position.x * width);
+							int y = (int) (position.y * height);
+							graphics2D.setColor(color);
+							graphics2D.fillRect(x, y, (int) width, (int) height);
+						});
+					}
+				}
 			}
 		};
 	}
@@ -141,9 +193,9 @@ public class Window {
 		});
 	}
 
-	public static Window create(Terrain terrain, int cellSize, AgentColorizer agentColorizer, int iterateStepsPerSecond,
-			List<Button> buttons) {
-		return new Window(terrain, cellSize, agentColorizer, buttons, iterateStepsPerSecond);
+	public static Window create(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
+			int compositeActionsPerSecond, List<Button> buttons) {
+		return new Window(terrain, cellSize, agentColorizer, buttons, compositeActionsPerSecond);
 	}
 
 	public void setSize(int width, int height) {
@@ -199,15 +251,39 @@ public class Window {
 				};
 			}
 
-			default Action repeat(int count) {
+			default Action times(int count) {
 				if (count < 0) {
 					throw new IllegalArgumentException("count must be >0: " + count);
+				} else if (count == 0) {
+					return noop();
+				} else {
+					Action action = this;
+					return new CompositeAction() {
+
+						@Override
+						public void execute() {
+							for (int i = 0; i < count; i++) {
+								action.execute();
+							}
+						}
+
+						Function<Action, Stream<Action>> decomposer;
+
+						@Override
+						public Stream<Action> steps() {
+							decomposer = act -> {
+								if (act instanceof CompositeAction comp) {
+									return comp.steps().flatMap(decomposer);
+								} else {
+									return Stream.of(act);
+								}
+							};
+							return IntStream.range(0, count)//
+									.mapToObj(i -> action)//
+									.flatMap(decomposer);
+						}
+					};
 				}
-				Action action = noop();
-				for (int i = 0; i < count; i++) {
-					action = action.then(this);
-				}
-				return action;
 			}
 
 			static Action noop() {
@@ -233,5 +309,9 @@ public class Window {
 			return new Button(title, action);
 		}
 
+	}
+
+	public void addFilter(Function<Position, Color> filter) {
+		filters.add(filter);
 	}
 }

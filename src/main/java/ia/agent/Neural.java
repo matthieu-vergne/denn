@@ -12,6 +12,8 @@ public interface Neural<T> {
 
 		Builder<T> createNeuronWithWeightedSumFunction(double weight);
 
+		Builder<T> createNeuronWithRandomSignal();
+
 		Builder<T> createNeuronWithSumFunction();
 
 		Builder<T> createNeuronWithMinFunction();

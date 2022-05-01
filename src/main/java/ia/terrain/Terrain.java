@@ -4,6 +4,7 @@ import static java.util.Objects.*;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -16,6 +17,7 @@ public class Terrain {
 
 	private final int width;
 	private final int height;
+	private Map<Agent, Position> agentsPosition = new LinkedHashMap<>();// Linked for random determinism
 
 	private Terrain(int width, int height) {
 		this.width = width;
@@ -46,8 +48,6 @@ public class Terrain {
 		return Position.at(width / 2, height / 2);
 	}
 
-	private final Map<Agent, Position> agentsPosition = new HashMap<>();
-
 	public Stream<Agent> agents() {
 		return new ArrayList<>(agentsPosition.keySet()).stream();
 	}
@@ -59,6 +59,15 @@ public class Terrain {
 			throw new IllegalArgumentException("Unavailable position " + position);
 		}
 		agentsPosition.put(agent, position);
+	}
+
+	public Optional<Agent> replaceAgent(Agent agent, Position position) {
+		requireNonNull(agent, "No agent provided");
+		requireNonNull(position, "No position provided");
+		Optional<Agent> previous = getAgentAt(position);
+		previous.ifPresent(agentsPosition::remove);
+		agentsPosition.put(agent, position);
+		return previous;
 	}
 
 	public boolean isFreeFor(Agent agent, Position position) {
@@ -113,6 +122,10 @@ public class Terrain {
 			throw new IllegalArgumentException("Unknown agent " + agent);
 		}
 		return position;
+	}
+
+	public void optimize() {
+		agentsPosition = new LinkedHashMap<Agent, Position>(agentsPosition);// Linked for random determinism
 	}
 
 }

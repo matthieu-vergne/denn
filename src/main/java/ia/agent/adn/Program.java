@@ -1,5 +1,7 @@
 package ia.agent.adn;
 
+import static java.util.Collections.*;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -42,6 +44,12 @@ public class Program {
 
 	public static class Builder implements Neural.Builder<Program> {
 		private final List<Code> codes = new LinkedList<>();
+		
+		@Override
+		public Builder createNeuronWithRandomSignal() {
+			codes.add(new Code(Operation.CREATE_WITH_RANDOM_SIGNAL, 0.0));
+			return this;
+		}
 
 		@Override
 		public Builder createNeuronWithFixedSignal(double signal) {
@@ -102,5 +110,9 @@ public class Program {
 			return new Program(new ArrayList<>(codes));
 		}
 
+	}
+
+	public static Program noop() {
+		return new Program(emptyList());
 	}
 }

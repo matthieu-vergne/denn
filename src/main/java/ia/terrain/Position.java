@@ -55,4 +55,8 @@ public class Position {
 				max(min.y, min(y, max.y)) //
 		);
 	}
+
+	public double distanceTo(Position position) {
+		return Math.hypot(position.x - x, position.y - y);
+	}
 }

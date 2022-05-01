@@ -1,10 +1,12 @@
 package ia.terrain;
 
+import static java.lang.Math.*;
 import static java.util.stream.Collectors.*;
 
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Random;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
@@ -13,20 +15,12 @@ import ia.agent.Agent;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Mutator;
+import ia.agent.adn.Program;
 import ia.agent.adn.Reproducer;
 import ia.window.Window.Button;
 
 public interface TerrainInteractor {
 	public Button.Action on(Terrain terrain);
-
-	default TerrainInteractor then(TerrainInteractor nextInteractor) {
-		TerrainInteractor previousInteractor = this;
-		return terrain -> {
-			Button.Action previousAction = previousInteractor.on(terrain);
-			Button.Action nextAction = nextInteractor.on(terrain);
-			return previousAction.then(nextAction);
-		};
-	}
 
 	public static TerrainInteractor moveAgents() {
 		return terrain -> {
@@ -47,13 +41,8 @@ public interface TerrainInteractor {
 
 	public static TerrainInteractor killAgents(BiPredicate<Terrain, Agent> selector) {
 		return terrain -> {
-			Predicate<Agent> filter = (Predicate<Agent>) agent1 -> selector.test(terrain, agent1);
-			return () -> {
-				List<Agent> killed = terrain.agents().filter(filter).collect(toList());
-				for (Agent agent2 : killed) {
-					terrain.removeAgent(agent2);
-				}
-			};
+			Predicate<Agent> forKilling = agent -> selector.test(terrain, agent);
+			return () -> terrain.agents().filter(forKilling).forEach(terrain::removeAgent);
 		};
 	}
 
@@ -61,8 +50,8 @@ public interface TerrainInteractor {
 		return killAgents(selector.negate());
 	}
 
-	public static TerrainInteractor reproduceAgents(NeuralNetwork.Factory networkFactory, Reproducer reproducer, Mutator mutator, int agentsLimit,
-			Random random) {
+	public static TerrainInteractor reproduceAgents(NeuralNetwork.Factory networkFactory, Reproducer reproducer,
+			Mutator mutator, int agentsLimit, Random random) {
 		StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
 		return terrain -> {
 			int agentsMax = terrain.width() * terrain.height();
@@ -84,6 +73,18 @@ public interface TerrainInteractor {
 					chromosomeChild = mutator.mutate(chromosomeChild);
 					Agent child = Agent.createFromChromosome(networkFactory, chromosomeChild);
 					terrain.placeAgent(child, freeRandomPosition.next());
+				}
+			};
+		};
+	}
+
+	public static TerrainInteractor fillAgents(NeuralNetwork.Factory networkFactory, Program program) {
+		return terrain -> {
+			return () -> {
+				Iterator<Position> freePosition = terrain.freePositions().iterator();
+				while (freePosition.hasNext()) {
+					Agent clone = Agent.createFromProgram(networkFactory, program);
+					terrain.placeAgent(clone, freePosition.next());
 				}
 			};
 		};
@@ -111,29 +112,136 @@ public interface TerrainInteractor {
 		};
 	}
 
-	public static class Condition {
-		public static BiPredicate<Terrain, Agent> withXAbove(int xLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).x >= xLimit;
+	public static interface Condition extends BiPredicate<Terrain, Agent> {
+		@Override
+		boolean test(Terrain terrain, Agent agent);
+
+		public static interface OnPosition extends Condition {
+			boolean test(Position position);
+
+			@Override
+			default boolean test(Terrain terrain, Agent agent) {
+				return test(terrain.getAgentPosition(agent));
+			}
+
+			default Condition.OnPosition and(Condition.OnPosition other) {
+				return position -> this.test(position) && other.test(position);
+			}
+
+			default Condition.OnPosition or(Condition.OnPosition other) {
+				return position -> this.test(position) || other.test(position);
+			}
+
+			@Override
+			default Condition.OnPosition negate() {
+				return position -> !this.test(position);
+			}
 		}
 
-		public static BiPredicate<Terrain, Agent> withXBelow(int xLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).x <= xLimit;
+		public static Condition.OnPosition withXAbove(int xLimit) {
+			return position -> position.x >= xLimit;
 		}
 
-		public static BiPredicate<Terrain, Agent> withXIn(int xMin, int xMax) {
+		public static Condition.OnPosition withXBelow(int xLimit) {
+			return position -> position.x <= xLimit;
+		}
+
+		public static Condition.OnPosition withXIn(int xMin, int xMax) {
 			return withXAbove(xMin).and(withXBelow(xMax));
 		}
 
-		public static BiPredicate<Terrain, Agent> withYAbove(int yLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).y >= yLimit;
+		public static Condition.OnPosition withYAbove(int yLimit) {
+			return position -> position.y >= yLimit;
 		}
 
-		public static BiPredicate<Terrain, Agent> withYBelow(int yLimit) {
-			return (terrain, agent) -> terrain.getAgentPosition(agent).y <= yLimit;
+		public static Condition.OnPosition withYBelow(int yLimit) {
+			return position -> position.y <= yLimit;
 		}
 
-		public static BiPredicate<Terrain, Agent> withYIn(int yMin, int yMax) {
+		public static Condition.OnPosition withYIn(int yMin, int yMax) {
 			return withYAbove(yMin).and(withYBelow(yMax));
+		}
+
+		public static Condition.OnPosition inBand(Position p1, Position p2, int safeDistance) {
+			return position -> {
+				if (p1.distanceTo(position) < safeDistance) {
+					return true;
+				}
+				if (p2.distanceTo(position) < safeDistance) {
+					return true;
+				}
+				Projection projection = project(p1, p2, position);
+				return projection.band > 0 && projection.band < 1 && abs(projection.orthogonal) < safeDistance;
+			};
+		}
+
+		public static Condition.OnPosition inBand(Position p1, Position p2, int safeDistance, int deathDistance,
+				Random random) {
+			if (safeDistance > deathDistance) {
+				throw new IllegalArgumentException("Death distance must be above safe distance");
+			}
+			if (deathDistance == safeDistance) {
+				return inBand(p1, p2, safeDistance);
+			}
+			Objects.requireNonNull(random, "No random component provided");
+
+			BiPredicate<Position, Integer> check = (position, distance) -> {
+				if (p1.distanceTo(position) < distance) {// TODO Don't compute twice
+					return true;
+				}
+				if (p2.distanceTo(position) < distance) {// TODO Don't compute twice
+					return true;
+				}
+				Projection projection = project(p1, p2, position);// TODO Don't compute twice
+				return projection.band > 0 && projection.band < 1 && abs(projection.orthogonal) < distance;
+			};
+			return position -> {
+				return check.test(position, safeDistance)
+						|| check.test(position, safeDistance + random.nextInt(deathDistance - safeDistance));
+			};
+		}
+
+		static record Projection(double band, double orthogonal) {
+		};
+
+		private static Projection project(Position p1, Position p2, Position position) {
+			// Compute the band vector
+			double vx = p2.x - p1.x;
+			double vy = p2.y - p1.y;
+			// compute the orthogonal unit vector (size of 1 pixel)
+			double vNorm = hypot(vx, vy);
+			double wx = -vy / vNorm;
+			double wy = vx / vNorm;
+			// Compute the agent vector
+			double ux = position.x - p1.x;
+			double uy = position.y - p1.y;
+			// Project the agent vector on the band vector
+			// In the band, it is between 0 and 1
+			double bandProjection = (ux * vx + uy * vy) / (vx * vx + vy * vy);
+			// Project the agent vector on the orthogonal unit vector
+			// In the band, its absolute value is below the safe distance
+			double orthogonalProjection = (ux * wx + uy * wy) / (wx * wx + wy * wy);
+
+			return new Projection(bandProjection, orthogonalProjection);
+		}
+
+		public static Condition.OnPosition closeTo(Position safePosition, double safeDistance) {
+			return position -> safePosition.distanceTo(position) < safeDistance;
+		}
+
+		public static Condition.OnPosition closeTo(Position safePosition, double safeDistance, double deathDistance,
+				Random random) {
+			if (safeDistance > deathDistance) {
+				throw new IllegalArgumentException("Death distance must be above safe distance");
+			}
+			if (deathDistance == safeDistance) {
+				return closeTo(safePosition, safeDistance);
+			}
+			Objects.requireNonNull(random, "No random component provided");
+			return position -> {
+				double survivableDistance = safeDistance + random.nextDouble(deathDistance - safeDistance);
+				return safePosition.distanceTo(position) < survivableDistance;
+			};
 		}
 	}
 }

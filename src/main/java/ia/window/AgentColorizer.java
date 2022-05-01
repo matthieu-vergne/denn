@@ -14,12 +14,19 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import ia.agent.Agent;
 import ia.agent.Neural.Builder;
+import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
+import ia.terrain.Move;
+import ia.terrain.Position;
+import ia.terrain.Terrain;
 
 // TODO Support simple case: fixed network + weights-based color
 // TODO Can we do something with wave function collapse? https://www.procjam.com/tutorials/wfc/
@@ -61,8 +68,6 @@ public interface AgentColorizer {
 
 	public static AgentColorizer basedOnStructure() {
 		return agent -> {
-			System.out.println("== COLOR ==");
-
 			byte[] chromosomeBytes = agent.chromosome().bytes();
 			Program program = Program.deserialize(chromosomeBytes);
 			interface ColorFunction {
@@ -84,6 +89,12 @@ public interface AgentColorizer {
 				public Builder<Color> createNeuronWithFixedSignal(double signal) {
 					// TODO Use hue
 					colorFunctions.add(inputs -> new Color(Color.HSBtoRGB((float) signal, 1.0f, 1.0f)));
+					return this;
+				}
+
+				@Override
+				public Builder<Color> createNeuronWithRandomSignal() {
+					colorFunctions.add(inputs -> Color.MAGENTA);
 					return this;
 				}
 
@@ -146,39 +157,30 @@ public interface AgentColorizer {
 					for (int neuronIndex = 0; neuronIndex < colorFunctions.size(); neuronIndex++) {
 						colors.add(TRANSPARENT);
 					}
-					System.out.println(stringOf(colors));
 					int size = colors.size();
 					UnaryOperator<Integer> indexNormalizer = index -> normalize(index, size);
 
 					for (int neuronIndex = 0; neuronIndex < colorFunctions.size(); neuronIndex++) {
 						List<Integer> inputIndexes = indexesMap.computeIfAbsent(neuronIndex, k -> emptyList());
-						System.out.println(neuronIndex + " < " + inputIndexes);
 						List<Color> inputColors = inputIndexes == null //
 								? emptyList()//
 								: inputIndexes.stream().map(indexNormalizer).map(colors::get).collect(toList());
 						Color neuronColor = colorFunctions.get(neuronIndex).compute(inputColors);
-						System.out.println(stringOf(neuronColor) + " < " + stringOf(inputColors));
 						colors.set(neuronIndex, neuronColor);
-						System.out.println(stringOf(colors));
 					}
 
 					Integer dXIndex = indexNormalizer.apply(this.dXIndex);
 					Integer dYIndex = indexNormalizer.apply(this.dYIndex);
 					Color dXColor = colors.get(dXIndex);
 					Color dYColor = colors.get(dYIndex);
-					System.out.println("Color X = (" + dXIndex + ") " + stringOf(dXColor));
-					System.out.println("Color Y = (" + dYIndex + ") " + stringOf(dXColor));
 					Color color = List.of(dXColor, dYColor).stream().reduce(colorAccumulator((a, b) -> (a + b) / 2))
 							.orElse(TRANSPARENT);
-					System.out.println("> " + stringOf(color));
 					return color;
 				}
 
 			};
 			program.executeOn(colorBuilder);
-			Color color = colorBuilder.build();
-			System.out.println("== COLOR: " + stringOf(color) + " ==");
-			return color;
+			return colorBuilder.build();
 		};
 	}
 
@@ -193,6 +195,11 @@ public interface AgentColorizer {
 					return this;
 				}
 
+				@Override
+				public Builder<Color> createNeuronWithRandomSignal() {
+					return this;
+				}
+				
 				@Override
 				public Builder<Color> createNeuronWithWeightedSumFunction(double weight) {
 					weights.add(weight);
@@ -240,7 +247,6 @@ public interface AgentColorizer {
 						return Color.BLACK;
 					}
 
-					System.out.println("> weights: " + weights);
 					ByteBuffer buffer = weights.stream().collect(//
 							() -> ByteBuffer.allocate(Double.BYTES * weights.size()), //
 							ByteBuffer::putDouble, //
@@ -250,15 +256,104 @@ public interface AgentColorizer {
 					int rgba = pickBits(buffer.array(), Integer.SIZE, UnaryOperator.identity()).getInt();
 					return new Color(rgba, false);
 				}
-
 			};
 			byte[] chromosomeBytes = agent.chromosome().bytes();
 			Program program = Program.deserialize(chromosomeBytes);
 			program.executeOn(colorBuilder);
 			Color color = colorBuilder.build();
-			System.out.println("== COLOR: " + stringOf(color) + " ==");
 			return color;
 		};
+	}
+
+	public static AgentColorizer pickingOnBehaviour(Terrain terrain, NeuralNetwork.Factory networkFactory) {
+		boolean[] bitsMemory = new boolean[4];
+		Runnable bitsMemoryReset = () -> {
+			Arrays.fill(bitsMemory, false);
+		};
+		Function<BiFunction<Move, Boolean, Boolean>, Function<Move, Boolean>> previouser = new Function<BiFunction<Move, Boolean, Boolean>, Function<Move, Boolean>>() {
+			private int index = 0;
+
+			@Override
+			public Function<Move, Boolean> apply(BiFunction<Move, Boolean, Boolean> function) {
+				int previousIndex = index++;
+				return move -> {
+					Boolean bit = function.apply(move, bitsMemory[previousIndex]);
+					bitsMemory[previousIndex] = bit;
+					return bit;
+				};
+			}
+		};
+		Function<Move, Boolean> redBit = previouser.apply((move, previous) -> {
+			int dX = move.dX();
+			return dX > 0 ? true //
+					: dX < 0 ? false //
+							: previous;
+		});
+		Function<Move, Boolean> greenBit = previouser.apply((move, previous) -> {
+			int dY = move.dY();
+			return dY > 0 ? true //
+					: dY < 0 ? false //
+							: previous;
+		});
+		Function<Move, Boolean> blueBit = previouser.apply((move, previous) -> {
+			int dX = move.dX();
+			int dY = move.dY();
+			return dX > dY ? true //
+					: dX < dY ? false //
+							: previous;
+		});
+		Function<Move, Boolean> alphaBit = previouser.apply((move, previous) -> {
+			int dX = move.dX();
+			int dY = move.dY();
+			return dX == dY;
+		});
+
+		int redMinIndex = 0;
+		int greenMinIndex = Byte.SIZE;
+		int blueMinIndex = Byte.SIZE * 2;
+		int alphaMinIndex = Byte.SIZE * 3;
+
+		BitSet bits = new BitSet(4 * Byte.SIZE);
+
+		AgentColorizer agentColorizer = agent -> {
+			byte[] bytes = agent.chromosome().bytes();
+			Program program = Program.deserialize(bytes);
+			NeuralNetwork network = networkFactory.execute(program);
+
+			int stepX = (terrain.width() - 1) / (Byte.SIZE - 1);
+			int stepY = (terrain.height() - 1) / (Byte.SIZE - 1);
+
+			bits.clear();
+			bitsMemoryReset.run();
+			int x = 0;
+			int y = 0;
+			for (int i = 0; i < Byte.SIZE; i++) {
+				network.setInputs(Position.at(x, y));
+				network.fire();
+				Move move = network.output();
+
+				bits.set(redMinIndex + i, redBit.apply(move));
+				bits.set(greenMinIndex + i, greenBit.apply(move));
+				bits.set(blueMinIndex + i, blueBit.apply(move));
+				bits.set(alphaMinIndex + i, alphaBit.apply(move));
+
+				x += stepX;
+				y += stepY;
+			}
+
+			ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES);
+			buffer.mark();
+			buffer.put(bits.toByteArray());
+			buffer.reset();
+			int rgba = buffer.getInt();
+
+			return new Color(rgba);
+		};
+
+		WeakHashMap<Agent, Color> cache = new WeakHashMap<Agent, Color>();
+		AgentColorizer cachedColorizer = agent -> cache.computeIfAbsent(agent, agentColorizer::colorize);
+
+		return cachedColorizer;
 	}
 
 	private static String stringOf(Color color) {
