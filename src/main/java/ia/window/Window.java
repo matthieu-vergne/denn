@@ -19,10 +19,9 @@ import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.time.Instant;
-import java.util.Collection;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -41,7 +40,7 @@ public class Window {
 	private final JFrame frame;
 	private final int compositeActionsPerSecond;
 	private final JPanel buttonsPanel;
-	private final Collection<Function<Position, Color>> filters = new LinkedList<>();
+	private Optional<Function<Position, Color>> filter = Optional.empty();
 	private boolean isWindowClosed = false;
 
 	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<Button> buttons,
@@ -149,7 +148,10 @@ public class Window {
 			@Override
 			public void paint(Graphics graphics) {
 				drawTerrain(terrain, graphics, agentColorizer);
+				filter.ifPresent(filter -> drawFilter(terrain, graphics, filter));
+			}
 
+			private void drawFilter(Terrain terrain, Graphics graphics, Function<Position, Color> filter) {
 				Graphics2D graphics2D = (Graphics2D) graphics;
 				Rectangle clipBounds = graphics2D.getClipBounds();
 				int clipWidth = clipBounds.width;
@@ -161,13 +163,11 @@ public class Window {
 				for (int px = 0; px < terrain.width(); px++) {
 					for (int py = 0; py < terrain.height(); py++) {
 						Position position = Position.at(px, py);
-						filters.forEach(filter -> {
-							Color color = filter.apply(position);
-							int x = (int) (position.x * width);
-							int y = (int) (position.y * height);
-							graphics2D.setColor(color);
-							graphics2D.fillRect(x, y, (int) width, (int) height);
-						});
+						Color color = filter.apply(position);
+						int x = (int) (position.x * width);
+						int y = (int) (position.y * height);
+						graphics2D.setColor(color);
+						graphics2D.fillRect(x, y, (int) width, (int) height);
 					}
 				}
 			}
@@ -311,7 +311,7 @@ public class Window {
 
 	}
 
-	public void addFilter(Function<Position, Color> filter) {
-		filters.add(filter);
+	public void setFilter(Function<Position, Color> filter) {
+		this.filter = Optional.of(filter);
 	}
 }

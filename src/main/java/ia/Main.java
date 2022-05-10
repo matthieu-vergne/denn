@@ -16,6 +16,7 @@ import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 
 import ia.agent.Agent;
+import ia.agent.LayeredNetwork;
 import ia.agent.Neural.Builder;
 import ia.agent.NeuralNetwork;
 import ia.agent.NeuralNetwork.Builder.Rand;
@@ -32,6 +33,7 @@ import ia.window.Window.Button;
 
 public class Main {
 
+	@SuppressWarnings("unused")
 	public static void main(String[] args) {
 		Random random = new Random(0);
 		Rand rand = random::nextDouble;
@@ -53,53 +55,53 @@ public class Main {
 		};
 		Supplier<Program> nonMover = () -> {
 			return createPerceptrons(//
-					0, 0, 0, //
-					0, 0, 0//
+					inputs -> inputs.weighted(0, 0, 0, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 0, 0, 0)//
 			);
 		};
 		Supplier<Program> downRightMover = () -> {
 			return createPerceptrons(//
-					0, 0, 1, //
-					0, 0, 1//
+					inputs -> inputs.weighted(0, 0, 1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 1, 0, 0)//
 			);
 		};
 		Supplier<Program> upLeftMover = () -> {
 			return createPerceptrons(//
-					0, 0, -1, //
-					0, 0, -1//
+					inputs -> inputs.weighted(0, 0, -1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, -1, 0, 0)//
 			);
 		};
 		Function<Position, Program> positionMover = position -> {
 			return createPerceptrons(//
-					-1, 0, position.x, //
-					0, -1, position.y//
+					inputs -> inputs.weighted(-1, 0, position.x, 0, 0), //
+					inputs -> inputs.weighted(0, -1, position.y, 0, 0)//
 			);
 		};
 		Supplier<Program> centerMover = () -> {
 			return createPerceptrons(//
-					-1, 0, terrain.width() / 2, //
-					0, -1, terrain.height() / 2//
+					inputs -> inputs.weighted(-1, 0, terrain.width() / 2, 0, 0), //
+					inputs -> inputs.weighted(0, -1, terrain.height() / 2, 0, 0)//
 			);
 		};
 		Supplier<Program> cornerMover = () -> {
 			return createPerceptrons(//
-					1, 0, -terrain.width() / 2, //
-					0, 1, -terrain.height() / 2//
+					inputs -> inputs.weighted(1, 0, -terrain.width() / 2, 0, 0), //
+					inputs -> inputs.weighted(0, 1, -terrain.height() / 2, 0, 0)//
 			);
 		};
 		Supplier<Program> randomMover = () -> {
 			return createPerceptrons(//
-					0, 0, -1, 2, 0, //
-					0, 0, -1, 0, 2//
+					inputs -> inputs.weighted(0, 0, -1, 2, 0), //
+					inputs -> inputs.weighted(0, 0, -1, 0, 2)//
 			);
 		};
 		Program program = nonMover.get();
 		placer.accept(program, terrain.minPosition());
 		placer.accept(program, terrain.maxPosition());
-		placer.accept(program, Position.at(40, 40));
-		placer.accept(program, Position.at(40, 60));
-		placer.accept(program, Position.at(60, 40));
-		placer.accept(program, Position.at(60, 60));
+		placer.accept(program, Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
+		placer.accept(centerMover.get(), Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
+		placer.accept(program, Position.at(terrain.width() * 6 / 10, terrain.height() * 4 / 10));
+		placer.accept(program, Position.at(terrain.width() * 6 / 10, terrain.height() * 6 / 10));
 //		placer.accept(downRightMover.get(), terrain.minPosition());
 //		placer.accept(upLeftMover.get(), terrain.maxPosition());
 //		placer.accept(positionMover.apply(Position.at(10, 90)), Position.at(5, 5));
@@ -108,7 +110,7 @@ public class Main {
 		int agentsLimit = 1000;
 
 		Reproducer reproducer = Reproducer.onRandomCodes(random);
-		Mutator mutator = Mutator.onWeights(random, 0.0001);
+		Mutator mutator = Mutator.onWeights(random, 0.001);
 
 		AgentColorizer agentColorizer = AgentColorizer.pickingOnBehaviour(terrain, basicFactory);
 		Button.Action logPopulation = () -> {
@@ -149,7 +151,7 @@ public class Main {
 		Condition.OnPosition atBottomLeft = inVeryLowX.and(inVeryHighY);
 		Condition.OnPosition atBottomRight = inVeryHighX.and(inVeryHighY);
 		Condition.OnPosition atCorners = atTopLeft.or(atTopRight).or(atBottomLeft).or(atBottomRight);
-		Condition.OnPosition closeToCenter = closeTo(terrain.centerPosition(), terrain.width() / 10,
+		Condition.OnPosition closeToCenter = closeTo(terrain.centerPosition(), terrain.width() * 2 / 10,
 				terrain.width() * 2 / 10, random);
 		int safeDistance = 30;
 		int xMax = terrain.width() - 1;
@@ -161,9 +163,10 @@ public class Main {
 		Condition.OnPosition closeToCorners = closeToTopLeft.or(closeToTopRight).or(closeToBottomLeft)
 				.or(closeToBottomRight);
 
-		Condition.OnPosition selectionCriterion = inBand(Position.at(20, 20), Position.at(20, 80), 5, 30, random);
+		Condition.OnPosition selectionCriterion = closeToCenter;// inBand(Position.at(20, 20), Position.at(20, 80), 5,
+																// 10, random);
 		Map<Position, Double> survivalRates = estimateSuccessRates(terrain, selectionCriterion);
-		int survivalArea = survivalRates.size();
+		int survivalArea = (int) survivalRates.values().stream().mapToDouble(d -> d).sum();
 		Button.Action logSurvivalCoverage = () -> {
 			int remaining = terrain.agentsCount();
 			int percent = 100 * remaining / survivalArea;
@@ -203,7 +206,7 @@ public class Main {
 		Color safeColor = new Color(0.0f, 1.0f, 0.0f, transparency);
 		Color surviveColor = new Color(1.0f, 1.0f, 0.0f, transparency);
 		Color deathColor = new Color(1.0f, 0.0f, 0.0f, transparency);
-		window.addFilter(position -> {
+		Function<Position, Color> windowFilter = position -> {
 			double rate = survivalRates.get(position);
 			if (rate == 1.0) {
 				return safeColor;
@@ -212,7 +215,19 @@ public class Main {
 				return deathColor;
 			}
 			return surviveColor;
-		});
+		};
+		window.setFilter(windowFilter);
+	}
+
+	// TODO Add hidden layer
+	private static Program createPerceptrons(UnaryOperator<LayeredNetwork.Layer> dxWeighter,
+			UnaryOperator<LayeredNetwork.Layer> dyWeighter) {
+		LayeredNetwork.Programmer programmer = new LayeredNetwork.Programmer();
+		LayeredNetwork.Layer inputs = programmer.layerOf().x().y().constant(1.0).rand().rand();
+		return programmer//
+				.setDx(programmer.sum(dxWeighter.apply(inputs)))//
+				.setDy(programmer.sum(dyWeighter.apply(inputs)))//
+				.program();
 	}
 
 	private static Map<Position, Double> estimateSuccessRates(Terrain terrain, Condition.OnPosition positionTrial) {
@@ -245,75 +260,6 @@ public class Main {
 				return super.createNeuronWith(functionDecorator.apply(function));
 			}
 		};
-	}
-
-	private static Program createPerceptrons(//
-			double x2Dx, double y2Dx, double c2Dx, //
-			double x2Dy, double y2Dy, double c2Dy) {
-		return createPerceptrons(//
-				x2Dx, y2Dx, c2Dx, 0, 0, //
-				x2Dy, y2Dy, c2Dy, 0, 0//
-		);
-	}
-
-	private static Program createPerceptrons(//
-			double x2Dx, double y2Dx, double c2Dx, double ra2Dx, double rb2Dx, //
-			double x2Dy, double y2Dy, double c2Dy, double ra2Dy, double rb2Dy) {
-		// TODO Use layer definitions with weights
-		Program.Builder builder = new Program.Builder();
-		int index = 0;
-
-		int x = index++;
-		int y = index++;
-
-		int c = index++;
-		builder.createNeuronWithFixedSignal(1.0);
-
-		int ra = index++;
-		builder.createNeuronWithRandomSignal();
-		int rb = index++;
-		builder.createNeuronWithRandomSignal();
-
-		// X -> DX
-		int xDx = index++;
-		builder.createNeuronWithWeightedSumFunction(x2Dx).moveTo(xDx).readSignalFrom(x);//
-		// Y -> DX
-		int yDx = index++;
-		builder.createNeuronWithWeightedSumFunction(y2Dx).moveTo(yDx).readSignalFrom(y);//
-		// C -> DX
-		int cDx = index++;
-		builder.createNeuronWithWeightedSumFunction(c2Dx).moveTo(cDx).readSignalFrom(c);//
-		// Ra -> DX
-		int raDx = index++;
-		builder.createNeuronWithWeightedSumFunction(ra2Dx).moveTo(raDx).readSignalFrom(ra);//
-		// Rb -> DX
-		int rbDx = index++;
-		builder.createNeuronWithWeightedSumFunction(rb2Dx).moveTo(rbDx).readSignalFrom(rb);//
-		// X -> DY
-		int xDy = index++;
-		builder.createNeuronWithWeightedSumFunction(x2Dy).moveTo(xDy).readSignalFrom(x);//
-		// Y -> DY
-		int yDy = index++;
-		builder.createNeuronWithWeightedSumFunction(y2Dy).moveTo(yDy).readSignalFrom(y);//
-		// C -> DY
-		int cDy = index++;
-		builder.createNeuronWithWeightedSumFunction(c2Dy).moveTo(cDy).readSignalFrom(c);//
-		// Ra -> DY
-		int raDy = index++;
-		builder.createNeuronWithWeightedSumFunction(ra2Dy).moveTo(raDy).readSignalFrom(ra);//
-		// Rb -> DY
-		int rbDy = index++;
-		builder.createNeuronWithWeightedSumFunction(rb2Dy).moveTo(rbDy).readSignalFrom(rb);//
-
-		int dx = index++;
-		builder.createNeuronWithSumFunction().setDXAt(dx).moveTo(dx)//
-				.readSignalFrom(xDx).readSignalFrom(yDx).readSignalFrom(cDx).readSignalFrom(raDx).readSignalFrom(rbDx);
-
-		int dy = index++;
-		builder.createNeuronWithSumFunction().setDYAt(dy).moveTo(dy)//
-				.readSignalFrom(xDy).readSignalFrom(yDy).readSignalFrom(cDy).readSignalFrom(raDy).readSignalFrom(rbDy);
-
-		return builder.build();
 	}
 
 	private static interface FunctionDecorator {
