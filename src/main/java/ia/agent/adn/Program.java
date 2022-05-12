@@ -6,8 +6,12 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
+import ia.agent.LayeredNetwork;
 import ia.agent.Neural;
+import ia.terrain.Position;
+import ia.terrain.Terrain;
 
 public class Program {
 
@@ -44,7 +48,7 @@ public class Program {
 
 	public static class Builder implements Neural.Builder<Program> {
 		private final List<Code> codes = new LinkedList<>();
-		
+
 		@Override
 		public Builder createNeuronWithRandomSignal() {
 			codes.add(new Code(Operation.CREATE_WITH_RANDOM_SIGNAL, 0.0));
@@ -108,6 +112,73 @@ public class Program {
 		@Override
 		public Program build() {
 			return new Program(new ArrayList<>(codes));
+		}
+
+	}
+
+	public static class Factory {
+		
+		public Factory() {
+		}
+		
+		// TODO Add hidden layer
+		public Program createPerceptrons(UnaryOperator<LayeredNetwork.Layer> dxWeighter,
+				UnaryOperator<LayeredNetwork.Layer> dyWeighter) {
+			LayeredNetwork.Programmer programmer = new LayeredNetwork.Programmer();
+			LayeredNetwork.Layer inputs = programmer.layerOf().x().y().constant(1.0).rand().rand();
+			return programmer//
+					.setDx(programmer.sum(dxWeighter.apply(inputs)))//
+					.setDy(programmer.sum(dyWeighter.apply(inputs)))//
+					.program();
+		}
+
+		public Program nonMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, 0, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 0, 0, 0)//
+			);
+		}
+
+		public Program downRightMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, 1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 1, 0, 0)//
+			);
+		}
+
+		public Program upLeftMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, -1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, -1, 0, 0)//
+			);
+		}
+
+		public Program positionMover(Position position) {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(-1, 0, position.x, 0, 0), //
+					inputs -> inputs.weighted(0, -1, position.y, 0, 0)//
+			);
+		}
+
+		public Program centerMover(Terrain terrain) {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(-1, 0, terrain.width() / 2, 0, 0), //
+					inputs -> inputs.weighted(0, -1, terrain.height() / 2, 0, 0)//
+			);
+		}
+
+		public Program cornerMover(Terrain terrain) {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(1, 0, -terrain.width() / 2, 0, 0), //
+					inputs -> inputs.weighted(0, 1, -terrain.height() / 2, 0, 0)//
+			);
+		}
+
+		public Program randomMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, -1, 2, 0), //
+					inputs -> inputs.weighted(0, 0, -1, 0, 2)//
+			);
 		}
 
 	}

@@ -13,7 +13,6 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
 import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
@@ -43,7 +42,7 @@ public class Window {
 	private Optional<Function<Position, Color>> filter = Optional.empty();
 	private boolean isWindowClosed = false;
 
-	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<Button> buttons,
+	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<List<Button>> buttons,
 			int compositeActionsPerSecond) {
 		this.frame = new JFrame("AI");
 
@@ -75,9 +74,9 @@ public class Window {
 		cst.weighty = 0;
 		contentPane.add(buttonsPanel, cst);
 
-		int preferredWidth = terrain.width() * cellSize;
-		int preferredHeight = terrain.height() * cellSize + buttonsPanel.getPreferredSize().height;
-		frame.setPreferredSize(new Dimension(preferredWidth, preferredHeight));
+		int preferredWidth = terrain.width() * cellSize - 1;
+		int preferredHeight = terrain.height() * cellSize - 1;
+		canvas.setPreferredSize(new Dimension(preferredWidth, preferredHeight));
 		frame.setDefaultCloseOperation(DISPOSE_ON_CLOSE);
 		frame.pack();
 		frame.setVisible(true);
@@ -91,11 +90,12 @@ public class Window {
 		Stream.of(buttonsPanel.getComponents()).forEach(component -> component.setEnabled(true));
 	}
 
-	private List<Button> withRepaint(List<Button> buttons, JPanel canvas) {
-		return buttons.stream().map(toButtonWithRepaint(canvas)).collect(toList());
+	private List<List<Button>> withRepaint(List<List<Button>> buttons, JPanel canvas) {
+		return buttons.stream().map(row -> row.stream().map(toButtonWithRepaint(canvas)).collect(toList()))
+				.collect(toList());
 	}
 
-	private Function<? super Button, ? extends Button> toButtonWithRepaint(JPanel canvas) {
+	private Function<Button, Button> toButtonWithRepaint(JPanel canvas) {
 		int stepPeriodMillis = 1000 / compositeActionsPerSecond;
 		return button -> {
 			Action action = button.action;
@@ -174,10 +174,19 @@ public class Window {
 		};
 	}
 
-	private JPanel createButtonsPanel(List<Button> buttons) {
-		JPanel buttonsPanel = new JPanel(new GridLayout(1, buttons.size()));
-		buttons.forEach(button -> {
-			buttonsPanel.add(createButton(button));
+	private JPanel createButtonsPanel(List<List<Button>> buttons) {
+		JPanel buttonsPanel = new JPanel(new GridBagLayout());
+		GridBagConstraints cst = new GridBagConstraints();
+		cst.gridx = 0;
+		cst.gridy = 0;
+		cst.fill = GridBagConstraints.HORIZONTAL;
+		buttons.forEach(row -> {
+			row.forEach(button -> {
+				buttonsPanel.add(createButton(button), cst);
+				cst.gridx++;
+			});
+			cst.gridx = 0;
+			cst.gridy++;
 		});
 		return buttonsPanel;
 	}
@@ -194,7 +203,7 @@ public class Window {
 	}
 
 	public static Window create(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			int compositeActionsPerSecond, List<Button> buttons) {
+			int compositeActionsPerSecond, List<List<Button>> buttons) {
 		return new Window(terrain, cellSize, agentColorizer, buttons, compositeActionsPerSecond);
 	}
 

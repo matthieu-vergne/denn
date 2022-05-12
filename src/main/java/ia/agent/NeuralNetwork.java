@@ -85,10 +85,12 @@ public interface NeuralNetwork {
 		private Integer dXIndex = null;
 		private Integer dYIndex = null;
 		
+		// TODO remove
 		public static interface Rand {
 			double next();
 		}
 		
+		// TODO remove
 		public Builder() {
 			this(() -> {
 				throw new RuntimeException("No random provided");

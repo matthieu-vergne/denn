@@ -1,7 +1,6 @@
 package ia;
 
 import static ia.terrain.TerrainInteractor.*;
-import static ia.terrain.TerrainInteractor.Condition.*;
 import static java.lang.Math.*;
 
 import java.awt.Color;
@@ -12,15 +11,11 @@ import java.util.Random;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 
 import ia.agent.Agent;
-import ia.agent.LayeredNetwork;
 import ia.agent.Neural.Builder;
 import ia.agent.NeuralNetwork;
-import ia.agent.NeuralNetwork.Builder.Rand;
-import ia.agent.NeuralNetwork.NeuralFunction;
 import ia.agent.adn.Mutator;
 import ia.agent.adn.Program;
 import ia.agent.adn.Reproducer;
@@ -33,174 +28,35 @@ import ia.window.Window.Button;
 
 public class Main {
 
-	@SuppressWarnings("unused")
 	public static void main(String[] args) {
 		Random random = new Random(0);
-		Rand rand = random::nextDouble;
 
 		Terrain terrain = Terrain.createWithSize(100, 100);
-		int cellSize = 7;
 
-		Supplier<Builder<NeuralNetwork>> basicBuilderGenerator = () -> createNetworkBuilder(FunctionDecorator.IDENTITY,
-				rand);
-		NeuralNetwork.Factory basicFactory = new NeuralNetwork.Factory(basicBuilderGenerator, null);
-		Supplier<Builder<NeuralNetwork>> loggedBuilderGenerator = () -> createNetworkBuilder(FunctionDecorator.LOGGED,
-				rand);
-		NeuralNetwork.Factory loggedFactory = new NeuralNetwork.Factory(loggedBuilderGenerator, null);
-		BiConsumer<Program, Position> placer = (program, position) -> {
-			terrain.placeAgent(Agent.createFromProgram(basicFactory, program), position);
-		};
-		BiConsumer<Program, Position> placerLogged = (program, position) -> {
-			terrain.placeAgent(Agent.createFromProgram(loggedFactory, program), position);
-		};
-		Supplier<Program> nonMover = () -> {
-			return createPerceptrons(//
-					inputs -> inputs.weighted(0, 0, 0, 0, 0), //
-					inputs -> inputs.weighted(0, 0, 0, 0, 0)//
-			);
-		};
-		Supplier<Program> downRightMover = () -> {
-			return createPerceptrons(//
-					inputs -> inputs.weighted(0, 0, 1, 0, 0), //
-					inputs -> inputs.weighted(0, 0, 1, 0, 0)//
-			);
-		};
-		Supplier<Program> upLeftMover = () -> {
-			return createPerceptrons(//
-					inputs -> inputs.weighted(0, 0, -1, 0, 0), //
-					inputs -> inputs.weighted(0, 0, -1, 0, 0)//
-			);
-		};
-		Function<Position, Program> positionMover = position -> {
-			return createPerceptrons(//
-					inputs -> inputs.weighted(-1, 0, position.x, 0, 0), //
-					inputs -> inputs.weighted(0, -1, position.y, 0, 0)//
-			);
-		};
-		Supplier<Program> centerMover = () -> {
-			return createPerceptrons(//
-					inputs -> inputs.weighted(-1, 0, terrain.width() / 2, 0, 0), //
-					inputs -> inputs.weighted(0, -1, terrain.height() / 2, 0, 0)//
-			);
-		};
-		Supplier<Program> cornerMover = () -> {
-			return createPerceptrons(//
-					inputs -> inputs.weighted(1, 0, -terrain.width() / 2, 0, 0), //
-					inputs -> inputs.weighted(0, 1, -terrain.height() / 2, 0, 0)//
-			);
-		};
-		Supplier<Program> randomMover = () -> {
-			return createPerceptrons(//
-					inputs -> inputs.weighted(0, 0, -1, 2, 0), //
-					inputs -> inputs.weighted(0, 0, -1, 0, 2)//
-			);
-		};
-		Program program = nonMover.get();
-		placer.accept(program, terrain.minPosition());
-		placer.accept(program, terrain.maxPosition());
-		placer.accept(program, Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
-		placer.accept(centerMover.get(), Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
-		placer.accept(program, Position.at(terrain.width() * 6 / 10, terrain.height() * 4 / 10));
-		placer.accept(program, Position.at(terrain.width() * 6 / 10, terrain.height() * 6 / 10));
-//		placer.accept(downRightMover.get(), terrain.minPosition());
-//		placer.accept(upLeftMover.get(), terrain.maxPosition());
-//		placer.accept(positionMover.apply(Position.at(10, 90)), Position.at(5, 5));
-//		placer.accept(positionMover.apply(Position.at(80, 10)), Position.at(6, 6));
-//		terrain.placeAgent(Agent.create(factory.moveRandomly()), Position.at(3, 3));
+		Supplier<Builder<NeuralNetwork>> networkBuilderGenerator = () -> new NeuralNetwork.Builder(random::nextDouble);
+		NeuralNetwork.Factory networkFactory = new NeuralNetwork.Factory(networkBuilderGenerator, random);
+		Function<Program, Agent> agentGenerator = program -> Agent.createFromProgram(networkFactory, program);
+		Program.Factory programFactory = new Program.Factory();
+		initializeAgents(terrain, programFactory, agentGenerator);
 		int agentsLimit = 1000;
 
+		Condition.OnPosition selectionCriterion = new Condition.OnPosition.Factory(terrain, random)
+				.surviveUntil(terrain.width() / 10)//
+				.dieFrom(terrain.width() * 2 / 10)//
+				.fromCenter();
 		Reproducer reproducer = Reproducer.onRandomCodes(random);
 		Mutator mutator = Mutator.onWeights(random, 0.001);
 
-		AgentColorizer agentColorizer = AgentColorizer.pickingOnBehaviour(terrain, basicFactory);
-		Button.Action logPopulation = () -> {
-			int remaining = terrain.agentsCount();
-			int percent = 100 * remaining / agentsLimit;
-			System.out.println("Remains " + remaining + " (" + percent + "%)");
-		};
-		int[] iterationCount = { 0 };
-		Button.Action countIteration = () -> {
-			System.out.println("Iteration " + (++iterationCount[0]));
-		};
-		Button.Action wait = () -> {
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException cause) {
-				throw new RuntimeException(cause);
-			}
-		};
-
-		Condition.OnPosition onLeft = withXBelow((terrain.width() - 1) / 2);
-		Condition.OnPosition onRight = onLeft.negate();
-		Condition.OnPosition onTop = withYBelow((terrain.height() - 1) / 2);
-		Condition.OnPosition onBottom = onTop.negate();
-		Condition.OnPosition inLowX = withXBelow((terrain.width() - 1) / 3);
-		Condition.OnPosition inVeryLowX = withXBelow((terrain.width() - 1) / 10);
-		Condition.OnPosition inHighX = withXAbove((terrain.width() - 1) * 2 / 3);
-		Condition.OnPosition inVeryHighX = withXAbove((terrain.width() - 1) * 9 / 10);
-		Condition.OnPosition inLowY = withYBelow((terrain.height() - 1) / 3);
-		Condition.OnPosition inVeryLowY = withYBelow((terrain.height() - 1) / 10);
-		Condition.OnPosition inHighY = withYAbove((terrain.height() - 1) * 2 / 3);
-		Condition.OnPosition inVeryHighY = withYAbove((terrain.height() - 1) * 9 / 10);
-		Condition.OnPosition inXCenter = inLowX.or(inHighX).negate();
-		Condition.OnPosition inYCenter = inLowY.or(inHighY).negate();
-		Condition.OnPosition inCenter = inXCenter.and(inYCenter);
-		Condition.OnPosition atBorders = inVeryLowX.or(inVeryHighX).or(inVeryLowY).or(inVeryHighY);
-		Condition.OnPosition atTopLeft = inVeryLowX.and(inVeryLowY);
-		Condition.OnPosition atTopRight = inVeryHighX.and(inVeryLowY);
-		Condition.OnPosition atBottomLeft = inVeryLowX.and(inVeryHighY);
-		Condition.OnPosition atBottomRight = inVeryHighX.and(inVeryHighY);
-		Condition.OnPosition atCorners = atTopLeft.or(atTopRight).or(atBottomLeft).or(atBottomRight);
-		Condition.OnPosition closeToCenter = closeTo(terrain.centerPosition(), terrain.width() * 2 / 10,
-				terrain.width() * 2 / 10, random);
-		int safeDistance = 30;
-		int xMax = terrain.width() - 1;
-		int yMax = terrain.height() - 1;
-		Condition.OnPosition closeToTopLeft = closeTo(Position.at(0, 0), safeDistance);
-		Condition.OnPosition closeToTopRight = closeTo(Position.at(xMax, 0), safeDistance);
-		Condition.OnPosition closeToBottomRight = closeTo(Position.at(xMax, yMax), safeDistance);
-		Condition.OnPosition closeToBottomLeft = closeTo(Position.at(0, yMax), safeDistance);
-		Condition.OnPosition closeToCorners = closeToTopLeft.or(closeToTopRight).or(closeToBottomLeft)
-				.or(closeToBottomRight);
-
-		Condition.OnPosition selectionCriterion = closeToCenter;// inBand(Position.at(20, 20), Position.at(20, 80), 5,
-																// 10, random);
 		Map<Position, Double> survivalRates = estimateSuccessRates(terrain, selectionCriterion);
-		int survivalArea = (int) survivalRates.values().stream().mapToDouble(d -> d).sum();
-		Button.Action logSurvivalCoverage = () -> {
-			int remaining = terrain.agentsCount();
-			int percent = 100 * remaining / survivalArea;
-			System.out.println("Survival area coverage " + percent + "%");
-		};
-		int survivalTarget = min(agentsLimit, survivalArea);
-		Button.Action logSurvivalSuccess = () -> {
-			int remaining = terrain.agentsCount();
-			int percent = 100 * remaining / survivalTarget;
-			System.out.println("Survival success " + percent + "%");
-		};
-
-		Button.Action move = moveAgents().on(terrain);
-		Button.Action reproduce = reproduceAgents(basicFactory, reproducer, mutator, agentsLimit, random).on(terrain);
-		Button.Action fill = fillAgents(basicFactory, nonMover.get()).on(terrain);
-		Button.Action dispatch = dispatchAgentRandomly(random).on(terrain);
-		Button.Action select = keepAgents(selectionCriterion).on(terrain).then(terrain::optimize).then(logPopulation)
-				.then(logSurvivalCoverage).then(logSurvivalSuccess);
-		int terrainSize = max(terrain.width(), terrain.height());
-		Button.Action iterate = countIteration.then(select).then(wait).then(reproduce).then(dispatch)
-				.then(move.times(terrainSize));
+		List<List<Button>> buttons = createButtons(random, terrain, networkFactory, programFactory, agentsLimit,
+				selectionCriterion, survivalRates, reproducer, mutator);
+		AgentColorizer agentColorizer = AgentColorizer.pickingOnBehaviour(terrain, networkFactory);
 		int compositeActionsPerSecond = 100;
+		int cellSize = 8;
+		// TODO Display network topography
+		// TODO Allow manual agent placement
 		Window window = Window.create(terrain, cellSize, agentColorizer, compositeActionsPerSecond, //
-				List.of(//
-						Button.create("Move", move), //
-						Button.create("x10", move.times(10)), //
-						Button.create("x100", move.times(100)), //
-						Button.create("Reproduce", reproduce), //
-						Button.create("Fill", fill), //
-						Button.create("Dispatch", dispatch), //
-						Button.create("Select", select), //
-						Button.create("Iterate", iterate), //
-						Button.create("x1000", iterate.times(1000))//
-				));
+				buttons);
 
 		float transparency = 0.3f;
 		Color safeColor = new Color(0.0f, 1.0f, 0.0f, transparency);
@@ -219,15 +75,94 @@ public class Main {
 		window.setFilter(windowFilter);
 	}
 
-	// TODO Add hidden layer
-	private static Program createPerceptrons(UnaryOperator<LayeredNetwork.Layer> dxWeighter,
-			UnaryOperator<LayeredNetwork.Layer> dyWeighter) {
-		LayeredNetwork.Programmer programmer = new LayeredNetwork.Programmer();
-		LayeredNetwork.Layer inputs = programmer.layerOf().x().y().constant(1.0).rand().rand();
-		return programmer//
-				.setDx(programmer.sum(dxWeighter.apply(inputs)))//
-				.setDy(programmer.sum(dyWeighter.apply(inputs)))//
-				.program();
+	private static List<List<Button>> createButtons(Random random, Terrain terrain,
+			NeuralNetwork.Factory networkFactory, Program.Factory programFactory, int agentsLimit,
+			Condition.OnPosition selectionCriterion, Map<Position, Double> survivalRates, Reproducer reproducer,
+			Mutator mutator) {
+		Button.Action logPopulation = () -> {
+			int remaining = terrain.agentsCount();
+			int percent = 100 * remaining / agentsLimit;
+			System.out.println("Remains " + remaining + " (" + percent + "%)");
+		};
+
+		int[] iterationCount = { 0 };
+		Button.Action countIteration = () -> {
+			System.out.println("Iteration " + (++iterationCount[0]));
+		};
+
+		int survivalArea = (int) survivalRates.values().stream().mapToDouble(d -> d).sum();
+		Button.Action logSurvivalCoverage = () -> {
+			int remaining = terrain.agentsCount();
+			int percent = 100 * remaining / survivalArea;
+			System.out.println("Survival area coverage " + percent + "%");
+		};
+
+		int survivalTarget = min(agentsLimit, survivalArea);
+		Button.Action logSurvivalSuccess = () -> {
+			int remaining = terrain.agentsCount();
+			int percent = 100 * remaining / survivalTarget;
+			System.out.println("Survival success " + percent + "%");
+		};
+
+		Button.Action wait = () -> {
+			try {
+				Thread.sleep(1000);
+			} catch (InterruptedException cause) {
+				throw new RuntimeException(cause);
+			}
+		};
+
+		Button.Action move = moveAgents().on(terrain);
+		Button.Action reproduce = reproduceAgents(networkFactory, reproducer, mutator, agentsLimit, random).on(terrain);
+		Button.Action fill = fillAgents(networkFactory, programFactory.nonMover()).on(terrain);
+		Button.Action dispatch = dispatchAgentRandomly(random).on(terrain);
+		Button.Action select = keepAgents(selectionCriterion).on(terrain).then(terrain::optimize).then(logPopulation)
+				.then(logSurvivalCoverage).then(logSurvivalSuccess);
+		int terrainSize = max(terrain.width(), terrain.height());
+		Button.Action iterate = countIteration.then(select).then(wait).then(reproduce).then(dispatch)
+				.then(move.times(terrainSize));
+
+		return List.of(//
+				List.of(//
+						Button.create("Move", move), //
+						Button.create("x10", move.times(10)), //
+						Button.create("x100", move.times(100)) //
+				), //
+				List.of(//
+						Button.create("Reproduce", reproduce), //
+						Button.create("Fill", fill) //
+				), //
+				List.of(//
+						Button.create("Dispatch", dispatch) //
+				), //
+				List.of(//
+						Button.create("Select", select) //
+				), //
+				List.of(//
+						Button.create("Iterate", iterate), //
+						Button.create("x1000", iterate.times(1000))//
+				)//
+		);
+	}
+
+	private static void initializeAgents(Terrain terrain, Program.Factory programFactory,
+			Function<Program, Agent> agentGenerator) {
+		BiConsumer<Program, Position> placer = (program, position) -> {
+			terrain.placeAgent(agentGenerator.apply(program), position);
+		};
+		Program mainProgram = programFactory.nonMover();
+		placer.accept(mainProgram, terrain.minPosition());
+		placer.accept(mainProgram, terrain.maxPosition());
+		placer.accept(mainProgram, Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
+		placer.accept(programFactory.centerMover(terrain),
+				Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
+		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 4 / 10));
+		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 6 / 10));
+//		placer.accept(downRightMover.get(), terrain.minPosition());
+//		placer.accept(upLeftMover.get(), terrain.maxPosition());
+//		placer.accept(positionMover.apply(Position.at(10, 90)), Position.at(5, 5));
+//		placer.accept(positionMover.apply(Position.at(80, 10)), Position.at(6, 6));
+//		terrain.placeAgent(Agent.create(factory.moveRandomly()), Position.at(3, 3));
 	}
 
 	private static Map<Position, Double> estimateSuccessRates(Terrain terrain, Condition.OnPosition positionTrial) {
@@ -250,29 +185,6 @@ public class Main {
 
 	private static long repeat(Supplier<Boolean> trial, int attempts) {
 		return IntStream.range(0, attempts).mapToObj(i -> trial.get()).filter(b -> b).count();
-	}
-
-	private static ia.agent.NeuralNetwork.Builder createNetworkBuilder(UnaryOperator<NeuralFunction> functionDecorator,
-			Rand random) {
-		return new NeuralNetwork.Builder(random) {
-			@Override
-			public NeuralNetwork.Builder createNeuronWith(NeuralFunction function) {
-				return super.createNeuronWith(functionDecorator.apply(function));
-			}
-		};
-	}
-
-	private static interface FunctionDecorator {
-		static UnaryOperator<NeuralFunction> IDENTITY = UnaryOperator.identity();
-		static UnaryOperator<NeuralFunction> LOGGED = function -> {
-			System.out.println("+ N" + function.hashCode());
-			return inputs -> {
-				Double output = function.compute(inputs);
-				System.out.println("N" + function.hashCode() + " < " + inputs);
-				System.out.println("N" + function.hashCode() + " > " + output);
-				return output;
-			};
-		};
 	}
 
 }
