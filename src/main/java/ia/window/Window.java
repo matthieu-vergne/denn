@@ -1,6 +1,7 @@
 package ia.window;
 
 import static java.awt.Color.*;
+import static java.lang.Math.*;
 import static java.time.Instant.*;
 import static java.util.stream.Collectors.*;
 import static javax.swing.SwingUtilities.*;
@@ -23,12 +24,16 @@ import java.awt.event.MouseListener;
 import java.awt.event.MouseMotionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -43,24 +48,32 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
-import javax.swing.JTextField;
+import javax.swing.JTextArea;
+import javax.swing.border.Border;
+import javax.swing.border.TitledBorder;
 
 import ia.agent.Agent;
+import ia.agent.Neural;
+import ia.agent.Neural.Builder;
+import ia.agent.NeuralNetwork;
+import ia.agent.adn.Chromosome;
+import ia.agent.adn.Program;
 import ia.terrain.Position;
 import ia.terrain.Terrain;
+import ia.terrain.TerrainInteractor;
 import ia.window.Window.Button.Action;
 
 public class Window {
 
 	private final JFrame frame;
-	private Optional<Function<Position, Color>> filter = Optional.empty();
+	private List<Function<Position, Color>> filters = new LinkedList<>();
 	private boolean isWindowClosed = false;
 
 	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<List<Button>> buttons,
-			int compositeActionsPerSecond) {
+			int compositeActionsPerSecond, NeuralNetwork.Factory networkFactory) {
 
 		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons,
-				compositeActionsPerSecond);
+				compositeActionsPerSecond, networkFactory);
 
 		JTabbedPane tabs = new JTabbedPane();
 		tabs.add("Simulation", simulationPanel);
@@ -82,26 +95,24 @@ public class Window {
 	}
 
 	private JPanel createSimulationPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			List<List<Button>> buttons, int compositeActionsPerSecond) {
-		MousePosition mousePosition = new MousePosition();
+			List<List<Button>> buttons, int compositeActionsPerSecond, NeuralNetwork.Factory networkFactory) {
+		MousePosition canvasMousePosition = new MousePosition();
 
-		Position[] pointer = { null };
-		mousePosition.listenMove(position -> pointer[0] = position);
-		JPanel canvas = createCanvas(terrain, agentColorizer, () -> Optional.ofNullable(pointer[0]));
-		int preferredWidth = terrain.width() * cellSize - 1;
-		int preferredHeight = terrain.height() * cellSize - 1;
-		canvas.setPreferredSize(new Dimension(preferredWidth, preferredHeight));
+		JPanel canvas = createCanvas(terrain, cellSize, agentColorizer, canvasMousePosition);
 
 		JPanel[] buttonsPanel = { null };
 		Consumer<Boolean> buttonsEnabler = enable -> Stream.of(buttonsPanel[0].getComponents())
 				.forEach(component -> component.setEnabled(enable));
 		buttonsPanel[0] = createButtonsPanel(withRepaint(buttons, canvas, buttonsEnabler, compositeActionsPerSecond));
+		buttonsPanel[0].setBorder(new TitledBorder("Actions"));
 
-		MousePosition.GraphicsListener listener = mousePosition.graphicsListener(terrain, canvas);
+		MousePosition.GraphicsListener listener = canvasMousePosition.graphicsListener(terrain, canvas);
 		canvas.addMouseListener(listener);
 		canvas.addMouseMotionListener(listener);
 
-		JComponent agentPanel = createAgentPanel(mousePosition, terrain, canvas);
+		JComponent agentPanel = createAgentInfoPanel(canvasMousePosition, terrain, networkFactory);
+		JScrollPane agentInfoPanel = new JScrollPane(agentPanel);
+		agentInfoPanel.setBorder(new TitledBorder("Agent Info"));
 
 		JPanel terrainPanel = new JPanel();
 		terrainPanel.setLayout(new GridBagLayout());
@@ -133,34 +144,176 @@ public class Window {
 		cst.fill = GridBagConstraints.BOTH;
 		cst.weightx = 0;
 		cst.weighty = 0;
-		terrainPanel.add(agentPanel, cst);
+		terrainPanel.add(agentInfoPanel, cst);
 
 		return terrainPanel;
 	}
 
-	private JComponent createAgentPanel(MousePosition mousePosition, Terrain terrain, JPanel canvas) {
-		JLabel coordLabel = new JLabel();
-		mousePosition.listenMove(position -> {
-			if (position == null) {
-				coordLabel.setText("");
-			} else {
-				coordLabel.setText(position.toString());
+	private JPanel createCanvas(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
+			MousePosition mousePosition) {
+		Position[] positionOf = { null, null };
+		int mouse = 0;
+		int selection = 1;
+		Supplier<Stream<Pointer>> pointersSupplier = () -> Stream.of(//
+				new Pointer(positionOf[mouse], PointerRenderer.THIN_SQUARE), //
+				new Pointer(positionOf[selection], PointerRenderer.TARGET)//
+		).filter(pointer -> pointer.position != null);
+
+		@SuppressWarnings("serial")
+		JPanel canvas = new JPanel() {
+			@Override
+			public void paint(Graphics graphics) {
+				DrawContext ctx = DrawContext.create(terrain, this, graphics);
+				drawBackground(ctx);
+				drawAgents(ctx, agentColorizer);
+				drawFilters(ctx, filters);
+				drawPointers(ctx, pointersSupplier);
 			}
+		};
+		mousePosition.listenMove(position -> {
+			positionOf[mouse] = position;
+			canvas.repaint();
+		});
+		mousePosition.listenExit(() -> {
+			positionOf[mouse] = null;
+			canvas.repaint();
+		});
+		mousePosition.listenClick(position -> {
+			positionOf[selection] = position;
 			canvas.repaint();
 		});
 
-		JLabel agentLabel = new JLabel();
-		mousePosition.listenClick(position -> {
+		canvas.setPreferredSize(new Dimension(//
+				terrain.width() * cellSize - 1, //
+				terrain.height() * cellSize - 1//
+		));
+		return canvas;
+	}
+
+	private JPanel createAgentInfoPanel(MousePosition canvasMousePosition, Terrain terrain,
+			NeuralNetwork.Factory networkFactory) {
+		JLabel moveLabel = new JLabel(" ");
+		canvasMousePosition.listenMove(position -> moveLabel.setText(position.toString()));
+		canvasMousePosition.listenExit(() -> moveLabel.setText(" "));
+
+		JLabel selectLabel = new JLabel(" ");
+		JTextArea programInfoArea = new JTextArea();
+		programInfoArea.setEditable(false);
+		programInfoArea.setBackground(null);
+		JPanel attractorsPanel = new JPanel();
+		attractorsPanel.setLayout(new GridBagLayout());
+		GridBagConstraints attractorsConstraint = new GridBagConstraints();
+		attractorsConstraint.gridx = 0;
+		attractorsConstraint.gridy = 1;
+		attractorsConstraint.fill = GridBagConstraints.VERTICAL;
+		attractorsConstraint.weighty = 1;
+		attractorsPanel.add(new JPanel(), attractorsConstraint);
+		attractorsConstraint.gridy = 0;
+		attractorsConstraint.fill = GridBagConstraints.HORIZONTAL;
+		attractorsConstraint.weighty = 0;
+		attractorsPanel.add(new JPanel(), attractorsConstraint);
+		canvasMousePosition.listenClick(position -> {
+			selectLabel.setText(position.toString());
 			Optional<Agent> agent = terrain.getAgentAt(position);
-			String agentString;
-			if (agent.isPresent()) {
-				// TODO Retrieve agent info
-				agentString = agent.get().toString();
+			if (agent.isEmpty()) {
+				String noAgentNotice = "No agent there";
+				programInfoArea.setText(noAgentNotice);
+				attractorsPanel.remove(1);
+				attractorsPanel.add(new JLabel(noAgentNotice), attractorsConstraint);
 			} else {
-				agentString = "-";
+				Chromosome chromosome = agent.get().chromosome();
+				Program program = Program.deserialize(chromosome.bytes());
+				ProgramInfoBuilder infoBuilder = new ProgramInfoBuilder();
+				program.executeOn(infoBuilder);
+				programInfoArea.setText(infoBuilder.build());
+
+				// TODO Compute attractors
+				Terrain bench = Terrain.createWithSize(terrain.width(), terrain.height());
+				int positionsCount = bench.width() * bench.height();
+				int runsPerPosition = 1;
+				int iterationsPerRun = (bench.width() + bench.height());
+
+				// TODO Replace by Map<Position, Integer>?
+				List<Integer> counts = new ArrayList<Integer>(positionsCount);
+				IntStream.range(0, positionsCount).forEach(i -> counts.add(0));
+				Function<Position, Integer> indexer = p -> {
+					return p.x + p.y * bench.width();
+				};
+				Function<Integer, Position> desindexer = index -> {
+					return Position.at(index % bench.width(), index / bench.width());
+				};
+				int[] max = { 1 };
+				Consumer<Position> countIncrementer = p -> {
+					Integer index = indexer.apply(p);
+					int count = counts.get(index);
+					count++;
+					max[0] = max(max[0], count);
+					counts.set(index, count);
+				};
+				Function<Position, Integer> countReader = p -> {
+					return counts.get(indexer.apply(p));
+				};
+				Action iteration = TerrainInteractor.moveAgents().on(bench);
+				int iterationCount = 0;
+				// TODO Compute in background
+				// TODO Continuous repaint while visible
+				// TODO Show progress in title
+				// TODO Show progress in icon
+				// TODO Stop computation when unselected
+				counts.set(indexer.apply(Position.at(49, 50)), 5000);// TODO Remove
+				for (int i = 0; i < positionsCount; i++) {
+					Position startPosition = desindexer.apply(i);
+					System.out.println("Start at " + startPosition);
+					for (int j = 0; j < runsPerPosition; j++) {
+						System.out.print("- Run " + j);
+						Agent clone = Agent.createFromProgram(networkFactory, program);
+						bench.placeAgent(clone, startPosition);
+						for (int k = 0; k < iterationsPerRun; k++) {
+							iteration.execute();
+							iterationCount++;
+						}
+						Position lastPosition = bench.removeAgent(clone);
+						countIncrementer.accept(lastPosition);
+						System.out.println(" until " + lastPosition);
+					}
+					int percent = 100 * iterationCount / (positionsCount * runsPerPosition * iterationsPerRun);
+					System.out.println("Done: " + percent + "%");
+				}
+				System.out.println("Max count: " + max[0] + " at " + desindexer.apply(counts.indexOf(max[0])));
+
+				Color colorRef = Color.RED;
+				Function<Position, Color> attractorFilter = p -> {
+					int count = countReader.apply(p);
+					int opacity = 255 * count / max[0];
+					if (opacity > 0) {
+						System.out.println("Draw " + p + " with " + count + " at " + opacity);
+					}
+					return new Color(colorRef.getRed(), colorRef.getGreen(), colorRef.getBlue(), opacity);
+				};
+				@SuppressWarnings("serial")
+				JPanel canvas = new JPanel() {
+					@Override
+					public Dimension getPreferredSize() {
+						int parentWidth = parentAvailableWidth(this);
+						return new Dimension(parentWidth, parentWidth * terrain.height() / terrain.width());
+					}
+
+					@Override
+					public void paint(Graphics graphics) {
+						DrawContext ctx = DrawContext.create(bench, this, graphics);
+						drawBackground(ctx);
+						drawFilter(ctx, attractorFilter);
+					}
+				};
+				attractorsPanel.remove(1);
+				attractorsPanel.add(canvas, attractorsConstraint);
 			}
-			agentLabel.setText(position + " " + agentString);
+			programInfoArea.setCaretPosition(0);
 		});
+
+		JTabbedPane agentInfoTabs = new JTabbedPane();
+		agentInfoTabs.addTab("Program", programInfoArea);
+		agentInfoTabs.addTab("Attractors", attractorsPanel);
 
 		JPanel agentPanel = new JPanel();
 		agentPanel.setLayout(new GridBagLayout());
@@ -169,6 +322,7 @@ public class Window {
 		cst.insets = new Insets(5, 5, 5, 5);
 		cst.gridx = GridBagConstraints.RELATIVE;
 		cst.gridy = 0;
+		cst.anchor = GridBagConstraints.FIRST_LINE_START;
 
 		cst.fill = GridBagConstraints.NONE;
 		cst.weightx = 0;
@@ -179,22 +333,31 @@ public class Window {
 		cst.fill = GridBagConstraints.HORIZONTAL;
 		cst.weightx = 1;
 		cst.weighty = 0;
-		agentPanel.add(coordLabel, cst);
+		agentPanel.add(moveLabel, cst);
 
 		cst.gridy++;
 
 		cst.fill = GridBagConstraints.NONE;
 		cst.weightx = 0;
 		cst.weighty = 0;
-		agentPanel.add(new JLabel("Clicked"), cst);
+		agentPanel.add(new JLabel("Selected"), cst);
 		agentPanel.add(new JLabel(":"), cst);
 
 		cst.fill = GridBagConstraints.HORIZONTAL;
 		cst.weightx = 1;
 		cst.weighty = 0;
-		agentPanel.add(agentLabel, cst);
+		agentPanel.add(selectLabel, cst);
 
-		return new JScrollPane(agentPanel);
+		cst.gridy++;
+
+		cst.fill = GridBagConstraints.BOTH;
+		cst.weightx = 1;
+		cst.weighty = 1;
+		cst.gridwidth = 3;
+		agentPanel.add(agentInfoTabs, cst);
+		cst.gridwidth = 0;
+
+		return agentPanel;
 	}
 
 	private List<List<Button>> withRepaint(List<List<Button>> buttons, JPanel canvas, Consumer<Boolean> buttonsEnabler,
@@ -253,15 +416,23 @@ public class Window {
 		};
 	}
 
-	@SuppressWarnings("serial")
-	private JPanel createCanvas(Terrain terrain, AgentColorizer agentColorizer, Supplier<Optional<Position>> pointer) {
-		return new JPanel() {
-			@Override
-			public void paint(Graphics graphics) {
-				drawTerrain(this, graphics, terrain, agentColorizer, pointer);
-				filter.ifPresent(filter -> drawFilter(this, graphics, terrain, filter));
-			}
-		};
+	record DrawContext(Graphics2D graphics2D, Terrain terrain, int componentWidth, int componentHeight,
+			double cellWidth, double cellHeight) {
+
+		public static DrawContext create(Terrain terrain, JComponent component, Graphics graphics) {
+			Graphics2D graphics2D = (Graphics2D) graphics;
+			Rectangle componentBounds = component.getBounds();
+			// TODO Scale with panel bounds, but don't draw out of graphics
+			int componentWidth = componentBounds.width;
+			int componentHeight = componentBounds.height;
+			double cellWidth = (double) componentWidth / terrain.width();
+			double cellHeight = (double) componentHeight / terrain.height();
+			return new DrawContext(//
+					graphics2D, terrain, //
+					componentWidth, componentHeight, //
+					cellWidth, cellHeight//
+			);
+		}
 	}
 
 	private JPanel createButtonsPanel(List<List<Button>> buttons) {
@@ -294,65 +465,119 @@ public class Window {
 	}
 
 	public static Window create(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			int compositeActionsPerSecond, List<List<Button>> buttons) {
-		return new Window(terrain, cellSize, agentColorizer, buttons, compositeActionsPerSecond);
+			int compositeActionsPerSecond, List<List<Button>> buttons, NeuralNetwork.Factory networkFactory) {
+		return new Window(terrain, cellSize, agentColorizer, buttons, compositeActionsPerSecond, networkFactory);
 	}
 
 	public void setSize(int width, int height) {
 		frame.setSize(width, height);
 	}
 
-	private void drawTerrain(JPanel panel, Graphics graphics, Terrain terrain, AgentColorizer agentColorizer,
-			Supplier<Optional<Position>> pointer) {
-		Graphics2D graphics2D = (Graphics2D) graphics;
-		Rectangle clipBounds = panel.getBounds();
-		// TODO Scale with panel bounds, but don't draw out of graphics
-		int clipWidth = clipBounds.width;
-		int clipHeight = clipBounds.height;
+	private void drawBackground(DrawContext ctx) {
+		ctx.graphics2D.setColor(WHITE);
+		ctx.graphics2D.fillRect(0, 0, ctx.componentWidth, ctx.componentHeight);
+	}
 
-		// Background
-		graphics2D.setColor(WHITE);
-		graphics2D.fillRect(0, 0, clipWidth, clipHeight);
-
-		// Agents
-		double width = (double) clipWidth / terrain.width();
-		double height = (double) clipHeight / terrain.height();
-		terrain.agents().forEach(agent -> {
+	private void drawAgents(DrawContext ctx, AgentColorizer agentColorizer) {
+		ctx.terrain.agents().forEach(agent -> {
 			Color color = agentColorizer.colorize(agent);
-			Position position = terrain.getAgentPosition(agent);
-			int x = (int) (position.x * width);
-			int y = (int) (position.y * height);
-			graphics2D.setColor(color);
-			graphics2D.fillRect(x, y, (int) width, (int) height);
-		});
-
-		pointer.get().ifPresent(position -> {
-			Color color = Color.BLACK;
-			int x = (int) (position.x * width);
-			int y = (int) (position.y * height);
-			graphics2D.setColor(color);
-			graphics2D.drawRect(x, y, (int) width, (int) height);
+			Position position = ctx.terrain.getAgentPosition(agent);
+			int x = (int) (position.x * ctx.cellWidth);
+			int y = (int) (position.y * ctx.cellHeight);
+			ctx.graphics2D.setColor(color);
+			ctx.graphics2D.fillRect(x, y, (int) ctx.cellWidth, (int) ctx.cellHeight);
 		});
 	}
 
-	private void drawFilter(JPanel panel, Graphics graphics, Terrain terrain, Function<Position, Color> filter) {
-		Graphics2D graphics2D = (Graphics2D) graphics;
-		Rectangle clipBounds = panel.getBounds();
-		// TODO Scale with panel bounds, but don't draw out of graphics
-		int clipWidth = clipBounds.width;
-		int clipHeight = clipBounds.height;
+	public static enum PointerRenderer {
+		THIN_SQUARE(drawerFactory -> drawerFactory.thinSquareDrawer(Color.BLACK)), //
+		THICK_SQUARE(drawerFactory -> drawerFactory.thickSquareDrawer(Color.BLACK, 10)), //
+		TARGET(drawerFactory -> drawerFactory.targetDrawer(Color.BLACK, 5)),//
+		;
 
-		// Filters
-		double width = (double) clipWidth / terrain.width();
-		double height = (double) clipHeight / terrain.height();
-		for (int px = 0; px < terrain.width(); px++) {
-			for (int py = 0; py < terrain.height(); py++) {
+		private final Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver;
+
+		private PointerRenderer(Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver) {
+			this.resolver = resolver;
+		}
+
+		BiConsumer<Integer, Integer> createDrawer(DrawerFactory drawerFactory) {
+			return resolver.apply(drawerFactory);
+		}
+	}
+
+	private static record Pointer(Position position, PointerRenderer renderer) {
+	}
+
+	private void drawPointers(DrawContext ctx, Supplier<Stream<Pointer>> pointers) {
+		DrawerFactory drawerFactory = new DrawerFactory(ctx);
+		pointers.get().forEach(pointer -> {
+			int x = (int) (pointer.position.x * ctx.cellWidth);
+			int y = (int) (pointer.position.y * ctx.cellHeight);
+			pointer.renderer.createDrawer(drawerFactory).accept(x, y);
+		});
+	}
+
+	static class DrawerFactory {
+		private final DrawContext ctx;
+
+		public DrawerFactory(DrawContext ctx) {
+			this.ctx = ctx;
+		}
+
+		public BiConsumer<Integer, Integer> thinSquareDrawer(Color color) {
+			return (x, y) -> {
+				ctx.graphics2D.setColor(color);
+				ctx.graphics2D.drawRect(x, y, (int) ctx.cellWidth, (int) ctx.cellHeight);
+			};
+		}
+
+		public BiConsumer<Integer, Integer> thickSquareDrawer(Color color, int radius) {
+			return (x, y) -> {
+				for (int i = 0; i < radius; i++) {
+					Color rectColor = new Color(color.getRed(), color.getGreen(), color.getBlue(),
+							255 * (radius - i) / radius);
+					ctx.graphics2D.setColor(rectColor);
+					ctx.graphics2D.drawRect(x - i, y - i, (int) ctx.cellWidth + 2 * i, (int) ctx.cellHeight + 2 * i);
+				}
+			};
+		}
+
+		public BiConsumer<Integer, Integer> targetDrawer(Color color, int extraRadius) {
+			double cellSize = max(ctx.cellWidth, ctx.cellHeight);
+			int diameter = (int) round(hypot(cellSize, cellSize)) + 2 * extraRadius;
+			return (x, y) -> {
+				int centerX = x + (int) round(ctx.cellWidth / 2);
+				int centerY = y + (int) round(ctx.cellHeight / 2);
+				int minX = centerX - diameter / 2;
+				int maxX = minX + diameter;
+				int minY = centerY - diameter / 2;
+				int maxY = minY + diameter;
+				ctx.graphics2D.setColor(color);
+				ctx.graphics2D.drawOval(minX, minY, diameter, diameter);
+				ctx.graphics2D.drawOval(minX, minY, diameter - 1, diameter - 1);
+				ctx.graphics2D.drawOval(minX + 1, minY + 1, diameter - 2, diameter - 2);
+				ctx.graphics2D.drawOval(minX + 1, minY + 1, diameter - 3, diameter - 3);
+				ctx.graphics2D.drawOval(minX + 2, minY + 2, diameter - 4, diameter - 4);
+				ctx.graphics2D.drawLine(minX, centerY, maxX, centerY);
+				ctx.graphics2D.drawLine(centerX, minY, centerX, maxY);
+			};
+		}
+	}
+
+	private void drawFilters(DrawContext ctx, List<Function<Position, Color>> filters) {
+		filters.forEach(filter -> drawFilter(ctx, filter));
+	}
+
+	private void drawFilter(DrawContext ctx, Function<Position, Color> filter) {
+		for (int px = 0; px < ctx.terrain.width(); px++) {
+			for (int py = 0; py < ctx.terrain.height(); py++) {
 				Position position = Position.at(px, py);
 				Color color = filter.apply(position);
-				int x = (int) (position.x * width);
-				int y = (int) (position.y * height);
-				graphics2D.setColor(color);
-				graphics2D.fillRect(x, y, (int) width, (int) height);
+				int x = (int) (position.x * ctx.cellWidth);
+				int y = (int) (position.y * ctx.cellHeight);
+				ctx.graphics2D.setColor(color);
+				ctx.graphics2D.fillRect(x, y, (int) ctx.cellWidth, (int) ctx.cellHeight);
 			}
 		}
 	}
@@ -443,44 +668,54 @@ public class Window {
 
 	}
 
-	public void setFilter(Function<Position, Color> filter) {
-		this.filter = Optional.of(filter);
+	public void addFilter(Function<Position, Color> filter) {
+		this.filters.add(filter);
 	}
 
 	private static void logCurrentMethod() {
 		System.out.println(Thread.currentThread().getStackTrace()[2].getMethodName());
 	}
 
+	@SuppressWarnings("unused")
+	private static String getCurrentMethod() {
+		return Thread.currentThread().getStackTrace()[2].getMethodName();
+	}
+
 	static class MousePosition {
 		private Collection<Consumer<Position>> moveListeners = new LinkedList<>();
-		private Collection<Consumer<Position>> clickListeners = new LinkedList<>();
 
 		public void listenMove(Consumer<Position> listener) {
 			moveListeners.add(listener);
 		}
 
-		public void listenClick(Consumer<Position> listener) {
-			clickListeners.add(listener);
-		}
-
-		public void set(Position position) {
+		public void moveTo(Position position) {
 			for (Consumer<Position> listener : moveListeners) {
 				listener.accept(position);
 			}
 		}
 
-		public void click(Position position) {
+		private Collection<Consumer<Position>> clickListeners = new LinkedList<>();
+
+		public void listenClick(Consumer<Position> listener) {
+			clickListeners.add(listener);
+		}
+
+		public void clickAt(Position position) {
 			for (Consumer<Position> listener : clickListeners) {
 				listener.accept(position);
 			}
 		}
 
-		public void enable(Position position) {
-			set(position);
+		private Collection<Runnable> exitListeners = new LinkedList<>();
+
+		public void listenExit(Runnable listener) {
+			exitListeners.add(listener);
 		}
 
-		public void disable() {
-			set(null);
+		public void exit() {
+			for (Runnable listener : exitListeners) {
+				listener.run();
+			}
 		}
 
 		static interface GraphicsListener extends MouseListener, MouseMotionListener {
@@ -495,17 +730,17 @@ public class Window {
 
 				@Override
 				public void mouseEntered(MouseEvent event) {
-					enable(positioner.apply(event.getPoint()));
+					moveTo(positioner.apply(event.getPoint()));
 				}
 
 				@Override
 				public void mouseExited(MouseEvent event) {
-					disable();
+					exit();
 				}
 
 				@Override
 				public void mouseMoved(MouseEvent event) {
-					set(positioner.apply(event.getPoint()));
+					moveTo(positioner.apply(event.getPoint()));
 				}
 
 				@Override
@@ -528,9 +763,139 @@ public class Window {
 
 				@Override
 				public void mouseClicked(MouseEvent event) {
-					click(positioner.apply(event.getPoint()));
+					clickAt(positioner.apply(event.getPoint()));
 				}
 			};
 		}
+	}
+
+	static class ProgramInfoBuilder implements Neural.Builder<String> {
+		private final Runnable flusher;
+		private final Consumer<String> neuronAdder;
+		private final Consumer<Integer> neuronTargeter;
+		private final Consumer<Integer> neuronReader;
+		private final BiConsumer<String, Integer> outputAssigner;
+		private final ByteArrayOutputStream stream = new ByteArrayOutputStream(); //
+
+		public ProgramInfoBuilder() {
+			PrintStream out = new PrintStream(stream);
+
+			int[] indexOf = { 0, 0 };
+			int reader = 0;
+			int lastAdded = 1;
+
+			List<String> neuronNames = new LinkedList<String>();
+			List<Integer> readIndexes = new LinkedList<Integer>();
+
+			Function<Integer, String> neuronIdentifier = neuronIndex -> {
+				return neuronIndex + ":" + neuronNames.get(neuronIndex);
+			};
+			this.neuronTargeter = neuronIndex -> {
+				indexOf[reader] = neuronIndex;
+			};
+			this.neuronReader = neuronIndex -> {
+				readIndexes.add(neuronIndex);
+			};
+			this.flusher = () -> {
+				if (!readIndexes.isEmpty()) {
+					int readerIndex = indexOf[reader];
+					String readerName = neuronIdentifier.apply(readerIndex);
+					if (indexOf[lastAdded] != readerIndex) {
+						out.println(readerName);
+					}
+					readIndexes.forEach(index -> {
+						out.println("→" + neuronIdentifier.apply(index));
+					});
+					readIndexes.clear();
+				}
+			};
+			this.neuronAdder = name -> {
+				flusher.run();
+				int index = neuronNames.size();
+				neuronNames.add(name);
+				indexOf[lastAdded] = index;
+				out.println(index + " = " + name);
+			};
+			this.outputAssigner = (name, index) -> {
+				flusher.run();
+				out.println(name + " = " + neuronIdentifier.apply(index));
+			};
+
+			neuronAdder.accept("X");
+			neuronAdder.accept("Y");
+		}
+
+		@Override
+		public Builder<String> createNeuronWithFixedSignal(double signal) {
+			neuronAdder.accept("CONST(" + signal + ")");
+			return this;
+		}
+
+		@Override
+		public Builder<String> createNeuronWithRandomSignal() {
+			neuronAdder.accept("RAND");
+			return this;
+		}
+
+		@Override
+		public Builder<String> createNeuronWithSumFunction() {
+			neuronAdder.accept("SUM");
+			return this;
+		}
+
+		@Override
+		public Builder<String> createNeuronWithWeightedSumFunction(double weight) {
+			neuronAdder.accept("WEIGHT(" + weight + ")");
+			return this;
+		}
+
+		@Override
+		public Builder<String> createNeuronWithMinFunction() {
+			neuronAdder.accept("MIN");
+			return this;
+		}
+
+		@Override
+		public Builder<String> createNeuronWithMaxFunction() {
+			neuronAdder.accept("MAX");
+			return this;
+		}
+
+		@Override
+		public Builder<String> moveTo(int neuronIndex) {
+			neuronTargeter.accept(neuronIndex);
+			return this;
+		}
+
+		@Override
+		public Builder<String> readSignalFrom(int neuronIndex) {
+			neuronReader.accept(neuronIndex);
+			return this;
+		}
+
+		@Override
+		public Builder<String> setDXAt(int neuronIndex) {
+			outputAssigner.accept("DX", neuronIndex);
+			return this;
+		}
+
+		@Override
+		public Builder<String> setDYAt(int neuronIndex) {
+			outputAssigner.accept("DY", neuronIndex);
+			return this;
+		}
+
+		@Override
+		public String build() {
+			flusher.run();
+			return stream.toString().trim();
+		}
+	}
+
+	private int parentAvailableWidth(JComponent component) {
+		JComponent parent = (JComponent) component.getParent();
+		Border border = parent.getBorder();
+		Insets insets = border == null ? new Insets(0, 0, 0, 0) : border.getBorderInsets(parent);
+		return parent.getBounds().width - insets.left - insets.right;
 	}
 }

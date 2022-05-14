@@ -52,11 +52,11 @@ public class Main {
 				selectionCriterion, survivalRates, reproducer, mutator);
 		AgentColorizer agentColorizer = AgentColorizer.pickingOnBehaviour(terrain, networkFactory);
 		int compositeActionsPerSecond = 100;
-		int cellSize = 8;
+		int cellSize = 7;
 		// TODO Display network topography
 		// TODO Allow manual agent placement
 		Window window = Window.create(terrain, cellSize, agentColorizer, compositeActionsPerSecond, //
-				buttons);
+				buttons, networkFactory);
 
 		float transparency = 0.3f;
 		Color safeColor = new Color(0.0f, 1.0f, 0.0f, transparency);
@@ -72,7 +72,7 @@ public class Main {
 			}
 			return surviveColor;
 		};
-		window.setFilter(windowFilter);
+		window.addFilter(windowFilter);
 	}
 
 	private static List<List<Button>> createButtons(Random random, Terrain terrain,
@@ -140,6 +140,8 @@ public class Main {
 				), //
 				List.of(//
 						Button.create("Iterate", iterate), //
+						Button.create("x10", iterate.times(10)), //
+						Button.create("x100", iterate.times(100)), //
 						Button.create("x1000", iterate.times(1000))//
 				)//
 		);
@@ -153,16 +155,11 @@ public class Main {
 		Program mainProgram = programFactory.nonMover();
 		placer.accept(mainProgram, terrain.minPosition());
 		placer.accept(mainProgram, terrain.maxPosition());
-		placer.accept(mainProgram, Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
 		placer.accept(programFactory.centerMover(terrain),
-				Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
+				Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
+		placer.accept(mainProgram, Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
 		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 4 / 10));
 		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 6 / 10));
-//		placer.accept(downRightMover.get(), terrain.minPosition());
-//		placer.accept(upLeftMover.get(), terrain.maxPosition());
-//		placer.accept(positionMover.apply(Position.at(10, 90)), Position.at(5, 5));
-//		placer.accept(positionMover.apply(Position.at(80, 10)), Position.at(6, 6));
-//		terrain.placeAgent(Agent.create(factory.moveRandomly()), Position.at(3, 3));
 	}
 
 	private static Map<Position, Double> estimateSuccessRates(Terrain terrain, Condition.OnPosition positionTrial) {
