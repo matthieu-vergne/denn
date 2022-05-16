@@ -3,7 +3,6 @@ package ia.terrain;
 import static java.util.Objects.*;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -128,4 +127,13 @@ public class Terrain {
 		agentsPosition = new LinkedHashMap<Agent, Position>(agentsPosition);// Linked for random determinism
 	}
 
+	public Stream<Position> allPositions() {
+		return range(0, width).flatMap(x -> //
+		range(0, height).flatMap(y -> //
+		Stream.of(Position.at(x, y))));
+	}
+
+	private Stream<Integer> range(int startInclusive, int endExclusive) {
+		return IntStream.range(startInclusive, endExclusive).mapToObj(i -> i);
+	}
 }

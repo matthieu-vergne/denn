@@ -24,7 +24,7 @@ import ia.terrain.Terrain;
 import ia.terrain.TerrainInteractor.Condition;
 import ia.window.AgentColorizer;
 import ia.window.Window;
-import ia.window.Window.Button;
+import ia.window.Button;
 
 public class Main {
 
@@ -62,7 +62,7 @@ public class Main {
 		Color safeColor = new Color(0.0f, 1.0f, 0.0f, transparency);
 		Color surviveColor = new Color(1.0f, 1.0f, 0.0f, transparency);
 		Color deathColor = new Color(1.0f, 0.0f, 0.0f, transparency);
-		Function<Position, Color> windowFilter = position -> {
+		window.addFilter(position -> {
 			double rate = survivalRates.get(position);
 			if (rate == 1.0) {
 				return safeColor;
@@ -71,8 +71,7 @@ public class Main {
 				return deathColor;
 			}
 			return surviveColor;
-		};
-		window.addFilter(windowFilter);
+		});
 	}
 
 	private static List<List<Button>> createButtons(Random random, Terrain terrain,
