@@ -7,6 +7,7 @@ import static javax.swing.SwingUtilities.*;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Insets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -17,12 +18,15 @@ import java.util.NoSuchElementException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import javax.swing.JComponent;
 import javax.swing.border.Border;
 
+import ia.Measure;
+import ia.Measure.AggregatingCollector;
 import ia.agent.Agent;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
@@ -35,53 +39,17 @@ import ia.terrain.TerrainInteractor;
 public class AttractorsPanel extends TerrainPanel {
 
 	private final Terrain terrain;
-	private final Color colorRef = Color.RED;
-	private final List<Consumer<Double>> progressListeners = new LinkedList<>();
-	private boolean shouldBeComputing = false;
-
-	private Supplier<Stream<Position>> attractorFilterPositions;
-	private Function<Position, Color> attractorFilter;
-	private final Supplier<Drawer> drawerSupplier;
+	private final List<Consumer<Double>> progressListeners;
 	private final Consumer<Program> tasker;
+	private final Runnable computerStopper;
 
-	public static AttractorsPanel on(Terrain terrain, NeuralNetwork.Factory networkFactory) {
-		return new AttractorsPanel(terrain, networkFactory);
-	}
-
-	// TODO Move to static factory method
-	// TODO Use super(terrain, drawerSupplier)
-	private AttractorsPanel(Terrain terrain, NeuralNetwork.Factory networkFactory) {
-		super(terrain);
+	private AttractorsPanel(Terrain terrain, Supplier<Drawer> drawerSupplier, List<Consumer<Double>> progressListeners,
+			Consumer<Program> tasker, Runnable computerStopper) {
+		super(terrain, drawerSupplier);
 		this.terrain = terrain;
-		this.attractorFilterPositions = () -> Stream.empty();
-		this.attractorFilter = position -> {
-			throw new IllegalStateException("Should not be called");
-		};
-		this.drawerSupplier = () -> {
-			// TODO Optimize when drawing all surface
-			// TODO Draw only last updates if max unchanged
-			Drawer backgroundDrawer = filler(Color.WHITE);
-			Drawer attractorDrawer = Drawer.forEachPosition(attractorFilterPositions.get(),
-					attractorFilter.andThen(Drawer::filler));
-			return backgroundDrawer.then(attractorDrawer);
-		};
-		this.tasker = program -> {
-			int maxStartPositions = terrain.width() * terrain.height();
-			int maxRunsPerStartPosition = 1;
-			int maxIterationsPerRun = terrain.width() + terrain.height();
-
-			// TODO Replace by Map<Position, Integer>?
-			JobsContext context = createListContext(terrain, colorRef, maxStartPositions);
-
-			this.attractorFilterPositions = context.attractorFilterPositions;
-			this.attractorFilter = context.attractorFilter;
-
-			Jobs jobs = createComputingContext(this, terrain, networkFactory, program, maxStartPositions,
-					maxRunsPerStartPosition, maxIterationsPerRun, context, () -> shouldBeComputing, progressListeners);
-
-			this.shouldBeComputing = true;
-			invokeLater(jobs.firstJob());
-		};
+		this.progressListeners = progressListeners;
+		this.tasker = tasker;
+		this.computerStopper = computerStopper;
 	}
 
 	@Override
@@ -90,23 +58,96 @@ public class AttractorsPanel extends TerrainPanel {
 		return new Dimension(parentWidth, parentWidth * terrain.height() / terrain.width());
 	}
 
-	// FIXME remove
-	@Deprecated
-	@Override
-	protected void paint(DrawContext ctx) {
-		draw(ctx, drawerSupplier.get());
-	}
-
 	public void startComputingAttractors(Program program) {
 		tasker.accept(program);
 	}
 
 	public void stopComputingAttractors() {
-		this.shouldBeComputing = false;
+		computerStopper.run();
 	}
 
 	public void listenComputingProgress(Consumer<Double> listener) {
 		progressListeners.add(listener);
+	}
+
+	public static AttractorsPanel on(Terrain terrain, NeuralNetwork.Factory networkFactory) {
+		class Context {
+			AttractorsPanel attractorsPanel;
+			Supplier<Stream<Position>> attractorFilterPositions = () -> Stream.empty();
+			Function<Position, Color> attractorFilter = position -> {
+				throw new IllegalStateException("Should not be called");
+			};
+			boolean shouldBeComputing = false;
+		}
+		Context ctx = new Context();
+
+		var backgroundCollector = Measure.Collector.ofDuration();
+		var attractorsCollector = Measure.Collector.ofDuration();
+		var feedBackgroundDuration = Drawer.measureDuration().feeding(backgroundCollector);
+		var feedAttractorsDuration = Drawer.measureDuration().feeding(attractorsCollector);
+		List<AggregatingCollector<Duration>> collectors = List.of(backgroundCollector, attractorsCollector);
+		Supplier<Boolean> shouldStop = () -> !ctx.shouldBeComputing;
+		invokeLater(logDurations(shouldStop, collectors));
+		Supplier<Drawer> drawerSupplier = () -> {
+			// TODO Optimize when drawing large surface
+			// TODO Draw only last updates if max unchanged
+			Drawer backgroundDrawer = filler(Color.WHITE);
+			Drawer attractorsDrawer = Drawer.forEachPosition(ctx.attractorFilterPositions.get(),
+					ctx.attractorFilter.andThen(Drawer::filler));
+			Drawer measuredBackgroundDrawer = feedBackgroundDuration.from(backgroundDrawer);
+			Drawer measuredAttractorsDrawer = feedAttractorsDuration.from(attractorsDrawer);
+			return measuredBackgroundDrawer.then(measuredAttractorsDrawer);
+		};
+		List<Consumer<Double>> progressListeners = new LinkedList<>();
+		Consumer<Program> tasker = program -> {
+			int maxStartPositions = terrain.width() * terrain.height();
+			int maxRunsPerStartPosition = 1;
+			int maxIterationsPerRun = terrain.width() + terrain.height();
+
+			// TODO Replace by Map<Position, Integer>?
+			JobsContext context = createListContext(terrain, Color.RED, maxStartPositions);
+
+			ctx.attractorFilterPositions = context.attractorFilterPositions;
+			ctx.attractorFilter = context.attractorFilter;
+
+			Jobs jobs = createComputingContext(ctx.attractorsPanel, terrain, networkFactory, program, maxStartPositions,
+					maxRunsPerStartPosition, maxIterationsPerRun, context, () -> ctx.shouldBeComputing,
+					progressListeners);
+
+			ctx.shouldBeComputing = true;
+			invokeLater(jobs.firstJob());
+		};
+		Runnable computerStopper = () -> ctx.shouldBeComputing = false;
+		ctx.attractorsPanel = new AttractorsPanel(terrain, drawerSupplier, progressListeners, tasker, computerStopper);
+		return ctx.attractorsPanel;
+	}
+
+	private static Runnable logDurations(Supplier<Boolean> shouldStop,
+			List<AggregatingCollector<Duration>> collectors) {
+		return new Runnable() {
+
+			@Override
+			public void run() {
+				if (shouldStop.get()) {
+					return;
+				}
+				long total = collectors.stream()//
+						.map(AggregatingCollector<Duration>::value)//
+						.mapToLong(Duration::toMillis)//
+						.sum();
+				if (total > 0) {
+					System.out.println(collectors.stream()//
+							.map(AggregatingCollector<Duration>::value)//
+							.map(duration -> {
+								long millis = duration.toMillis();
+								long ratio = 100 * millis / total;
+								return duration + " " + ratio + "%";
+							})//
+							.collect(Collectors.joining(" | ")));
+				}
+				invokeLater(this);
+			}
+		};
 	}
 
 	private static final Runnable UNDEFINED_RUNNABLE = () -> {
@@ -186,9 +227,6 @@ public class AttractorsPanel extends TerrainPanel {
 		ctx.attractorFilter = position -> {
 			int count = countReader.apply(position);
 			int opacity = 255 * count / max[0];
-			if (opacity > 0) {
-				System.out.println("Draw " + position + " with " + count + " at " + opacity);
-			}
 			return new Color(colorRef.getRed(), colorRef.getGreen(), colorRef.getBlue(), opacity);
 		};
 
@@ -243,9 +281,6 @@ public class AttractorsPanel extends TerrainPanel {
 		ctx.attractorFilter = position -> {
 			int count = countReader.apply(position);
 			int opacity = 255 * count / max[0];
-			if (opacity > 0) {
-				System.out.println("Draw " + position + " with " + count + " at " + opacity);
-			}
 			return new Color(colorRef.getRed(), colorRef.getGreen(), colorRef.getBlue(), opacity);
 		};
 
@@ -261,7 +296,6 @@ public class AttractorsPanel extends TerrainPanel {
 		Jobs jobs = new Jobs();
 		jobs.startPosition = jobsContext.startPositionIterator.next();
 		jobs.prepareIterations = stopIfRequested(computingSemaphore, () -> {
-			System.out.print(jobs.startPosition + "x" + jobs.runIndex);
 			jobs.clone = Agent.createFromProgram(networkFactory, program);
 			terrain.placeAgent(jobs.clone, jobs.startPosition);
 			invokeLater(jobs.iterate);
@@ -280,7 +314,6 @@ public class AttractorsPanel extends TerrainPanel {
 		jobs.nextRun = stopIfRequested(computingSemaphore, () -> {
 			Position lastPosition = terrain.removeAgent(jobs.clone);
 			jobsContext.countIncrementer.accept(lastPosition);
-			System.out.println(" = " + lastPosition + " (" + (100 * jobs.totalIterations / maxIterations) + "%)");
 			for (Consumer<Double> listener : progressListeners) {
 				listener.accept((double) jobs.totalIterations / maxIterations);
 			}

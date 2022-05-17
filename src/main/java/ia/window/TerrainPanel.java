@@ -7,6 +7,8 @@ import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
@@ -21,6 +23,8 @@ import java.util.stream.Stream;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 
+import ia.Measure;
+import ia.Measure.Feeder;
 import ia.agent.Agent;
 import ia.terrain.Position;
 import ia.terrain.Terrain;
@@ -121,6 +125,16 @@ public class TerrainPanel extends JPanel {
 				}
 			};
 			return collector;
+		}
+
+		public static Feeder<Drawer, Duration> measureDuration() {
+			return Measure.of((drawer, collector) -> {
+				return ctx -> {
+					Instant start = Instant.now();
+					drawer.draw(ctx);
+					collector.collect(Duration.between(start, Instant.now()));
+				};
+			});
 		}
 	}
 
