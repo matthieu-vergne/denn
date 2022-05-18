@@ -40,14 +40,24 @@ public class TerrainPanel extends JPanel {
 		this.drawerSupplier = drawerSupplier;
 	}
 
-	// TODO Remove
-	@Deprecated
-	public TerrainPanel(Terrain terrain) {
-		this(terrain, null);
+	public void repaint(Position lastPosition) {
+		Rectangle componentBounds = this.getBounds();
+		int componentWidth = componentBounds.width;
+		int componentHeight = componentBounds.height;
+		double cellWidth = (double) componentWidth / terrain.width();
+		double cellHeight = (double) componentHeight / terrain.height();
+
+		int x = (int) (lastPosition.x * cellWidth);
+		int y = (int) (lastPosition.y * cellHeight);
+		System.out.println("REPAINT (" + x + "," + y + ")x(" + cellWidth + "," + cellHeight + ")");
+		repaint(x, y, (int) cellWidth, (int) cellHeight);
+		// FIXME https://www.oracle.com/java/technologies/painting.html
 	}
 
 	@Override
-	public void paint(Graphics graphics) {
+	protected void paintComponent(Graphics graphics) {
+		System.out.println(graphics.getClip());
+		new Exception().printStackTrace();
 		paint(DrawContext.create(terrain, this, graphics).atComponent());
 	}
 

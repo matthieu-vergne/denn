@@ -2,19 +2,25 @@ package ia.window;
 
 import static ia.window.TerrainPanel.Drawer.*;
 import static java.lang.Math.*;
+import static java.util.stream.Collectors.*;
 import static javax.swing.SwingUtilities.*;
 
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Insets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -27,12 +33,14 @@ import javax.swing.border.Border;
 
 import ia.Measure;
 import ia.Measure.AggregatingCollector;
+import ia.Measure.Decorator;
 import ia.agent.Agent;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
 import ia.terrain.Position;
 import ia.terrain.Terrain;
 import ia.terrain.TerrainInteractor;
+import ia.window.TerrainPanel.Drawer;
 
 // TODO Simplify
 @SuppressWarnings("serial")
@@ -78,6 +86,10 @@ public class AttractorsPanel extends TerrainPanel {
 				throw new IllegalStateException("Should not be called");
 			};
 			boolean shouldBeComputing = false;
+			public Map<Position, Integer> countsMap;
+			public List<Integer> countsList;
+			public AtomicReference<Collection<Position>> updated;
+			public int max;
 		}
 		Context ctx = new Context();
 
@@ -85,18 +97,67 @@ public class AttractorsPanel extends TerrainPanel {
 		var attractorsCollector = Measure.Collector.ofDuration();
 		var feedBackgroundDuration = Drawer.measureDuration().feeding(backgroundCollector);
 		var feedAttractorsDuration = Drawer.measureDuration().feeding(attractorsCollector);
+
+		var computingDuration = Measure.of(AttractorsPanel.<Drawer>supplierDuration()).feeding(System.out::print);
+		var drawingDuration = Drawer.measureDuration().feeding(System.out::println);
 		List<AggregatingCollector<Duration>> collectors = List.of(backgroundCollector, attractorsCollector);
 		Supplier<Boolean> shouldStop = () -> !ctx.shouldBeComputing;
 		invokeLater(logDurations(shouldStop, collectors));
-		Supplier<Drawer> drawerSupplier = () -> {
-			// TODO Optimize when drawing large surface
-			// TODO Draw only last updates if max unchanged
-			Drawer backgroundDrawer = filler(Color.WHITE);
-			Drawer attractorsDrawer = Drawer.forEachPosition(ctx.attractorFilterPositions.get(),
-					ctx.attractorFilter.andThen(Drawer::filler));
-			Drawer measuredBackgroundDrawer = feedBackgroundDuration.from(backgroundDrawer);
-			Drawer measuredAttractorsDrawer = feedAttractorsDuration.from(attractorsDrawer);
-			return measuredBackgroundDrawer.then(measuredAttractorsDrawer);
+		Supplier<Drawer> drawerSupplier = new Supplier<Drawer>() {
+			@Override
+			public Drawer get() {
+				// TODO Optimize when drawing large surface
+				// TODO Draw only last updates if max unchanged
+				Supplier<Drawer> computing1 = computingDuration.from(() -> legacy(ctx));
+				Supplier<Drawer> computing2 = computingDuration.from(() -> layers(terrain, ctx));
+				Supplier<Drawer> computing3 = computingDuration.from(() -> updates(terrain, ctx));
+				return drawingDuration.from(computing3.get());
+			}
+
+			private Drawer updates(Terrain terrain, Context ctx) {
+				// TODO Exploit JPanel.repaint(...) ?
+				// TODO int max = ctx.max;
+				// TODO Drawer backgroundDrawer = filler(Color.WHITE);
+				Collection<Position> updated = ctx.updated.getAndSet(new HashSet<Position>());
+				Drawer updatedDrawer = Drawer.forEachPosition(updated.stream(),
+						ctx.attractorFilter.andThen(Drawer::filler));
+				return updatedDrawer;
+			}
+
+			private Drawer layers(Terrain terrain, Context ctx) {
+				int[] max = { 0 };
+				Set<Position> remainingPositions = new HashSet<Position>(terrain.allPositions().collect(toList()));
+				HashMap<Integer, Collection<Position>> layers = ctx.countsMap.entrySet().stream().collect(//
+						HashMap<Integer, Collection<Position>>::new, //
+						(map, entry) -> {
+							Integer count = entry.getValue();
+							max[0] = max(max[0], count);
+							Position position = entry.getKey();
+							remainingPositions.remove(position);
+							map.computeIfAbsent(count, k -> new LinkedList<>()).add(position);
+						}, //
+						(map1, map2) -> map1.putAll(map2)//
+				);
+				Drawer emptyDrawer = Drawer.filler(Color.WHITE);
+				Drawer emptySpace = Drawer.forEachPosition(remainingPositions.stream(), p -> emptyDrawer);
+				return Stream.concat(Stream.of(emptySpace), layers.entrySet().stream()//
+						.map(entry -> {
+							Integer count = entry.getKey();
+							Drawer drawer = Drawer.filler(countToColor(Color.RED, max[0], count));
+							Collection<Position> positions = entry.getValue();
+							return Drawer.forEachPosition(positions.stream(), p -> drawer);
+						}))//
+						.collect(toCompositeDrawer());
+			}
+
+			private Drawer legacy(Context ctx) {
+				Drawer backgroundDrawer = filler(Color.WHITE);
+				Drawer attractorsDrawer = Drawer.forEachPosition(ctx.attractorFilterPositions.get(),
+						ctx.attractorFilter.andThen(Drawer::filler));
+//				backgroundDrawer = feedBackgroundDuration.from(backgroundDrawer);
+//				attractorsDrawer = feedAttractorsDuration.from(attractorsDrawer);
+				return backgroundDrawer.then(attractorsDrawer);
+			}
 		};
 		List<Consumer<Double>> progressListeners = new LinkedList<>();
 		Consumer<Program> tasker = program -> {
@@ -105,10 +166,14 @@ public class AttractorsPanel extends TerrainPanel {
 			int maxIterationsPerRun = terrain.width() + terrain.height();
 
 			// TODO Replace by Map<Position, Integer>?
-			JobsContext context = createListContext(terrain, Color.RED, maxStartPositions);
+			JobsContext context = createMapContext(terrain, Color.RED, maxStartPositions);
 
 			ctx.attractorFilterPositions = context.attractorFilterPositions;
 			ctx.attractorFilter = context.attractorFilter;
+			ctx.countsMap = context.countsMap;
+			ctx.countsList = context.countsList;
+			ctx.updated = context.updated;
+			ctx.max = context.max;
 
 			Jobs jobs = createComputingContext(ctx.attractorsPanel, terrain, networkFactory, program, maxStartPositions,
 					maxRunsPerStartPosition, maxIterationsPerRun, context, () -> ctx.shouldBeComputing,
@@ -120,6 +185,17 @@ public class AttractorsPanel extends TerrainPanel {
 		Runnable computerStopper = () -> ctx.shouldBeComputing = false;
 		ctx.attractorsPanel = new AttractorsPanel(terrain, drawerSupplier, progressListeners, tasker, computerStopper);
 		return ctx.attractorsPanel;
+	}
+
+	private static <T> Decorator<Supplier<T>, Duration> supplierDuration() {
+		return (runnable, collector) -> {
+			return () -> {
+				Instant start = Instant.now();
+				T drawer = runnable.get();
+				collector.collect(Duration.between(start, Instant.now()));
+				return drawer;
+			};
+		};
 	}
 
 	private static Runnable logDurations(Supplier<Boolean> shouldStop,
@@ -159,6 +235,10 @@ public class AttractorsPanel extends TerrainPanel {
 		Consumer<Position> countIncrementer;
 		Supplier<Stream<Position>> attractorFilterPositions;
 		Function<Position, Color> attractorFilter;
+		Map<Position, Integer> countsMap;
+		public List<Integer> countsList;
+		public int max;
+		public AtomicReference<Collection<Position>> updated;
 	}
 
 	private static class Jobs {
@@ -184,11 +264,16 @@ public class AttractorsPanel extends TerrainPanel {
 		};
 
 		JobsContext ctx = new JobsContext();
-		int[] max = { 0 };
+		ctx.max = 0;
+		ctx.updated = new AtomicReference<>(new HashSet<>());
 		ctx.countIncrementer = position -> {
 			int count = counts.computeIfAbsent(position, p -> 0);
 			count++;
-			max[0] = max(max[0], count);
+			ctx.max = max(ctx.max, count);
+			ctx.updated.updateAndGet(positions -> {
+				positions.add(position);
+				return positions;
+			});
 			counts.put(position, count);
 		};
 		ctx.startPositionIterator = new Iterator<Position>() {
@@ -224,10 +309,10 @@ public class AttractorsPanel extends TerrainPanel {
 					.filter(entry -> entry.getValue() > 0)//
 					.map(entry -> entry.getKey());
 		};
+		ctx.countsMap = counts;
 		ctx.attractorFilter = position -> {
 			int count = countReader.apply(position);
-			int opacity = 255 * count / max[0];
-			return new Color(colorRef.getRed(), colorRef.getGreen(), colorRef.getBlue(), opacity);
+			return countToColor(colorRef, ctx.max, count);
 		};
 
 		return ctx;
@@ -278,13 +363,18 @@ public class AttractorsPanel extends TerrainPanel {
 				return position != null;
 			});
 		};
+		ctx.countsList = counts;
 		ctx.attractorFilter = position -> {
 			int count = countReader.apply(position);
-			int opacity = 255 * count / max[0];
-			return new Color(colorRef.getRed(), colorRef.getGreen(), colorRef.getBlue(), opacity);
+			return countToColor(colorRef, max[0], count);
 		};
 
 		return ctx;
+	}
+
+	private static Color countToColor(Color colorRef, int max, int count) {
+		int opacity = 255 * count / max;
+		return new Color(colorRef.getRed(), colorRef.getGreen(), colorRef.getBlue(), opacity);
 	}
 
 	private static Jobs createComputingContext(AttractorsPanel attractorsPanel, Terrain terrain,
@@ -318,7 +408,7 @@ public class AttractorsPanel extends TerrainPanel {
 				listener.accept((double) jobs.totalIterations / maxIterations);
 			}
 			if (attractorsPanel.isVisible()) {
-				attractorsPanel.repaint();
+				attractorsPanel.repaint(lastPosition);
 			}
 			jobs.runIndex++;
 			jobs.iteration = 0;
