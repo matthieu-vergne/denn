@@ -24,7 +24,6 @@ import ia.agent.Agent;
 import ia.agent.Neural.Builder;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
-import ia.terrain.Move;
 import ia.terrain.Position;
 import ia.terrain.Terrain;
 
@@ -270,11 +269,11 @@ public interface AgentColorizer {
 		Runnable bitsMemoryReset = () -> {
 			Arrays.fill(bitsMemory, false);
 		};
-		Function<BiFunction<Move, Boolean, Boolean>, Function<Move, Boolean>> previouser = new Function<BiFunction<Move, Boolean, Boolean>, Function<Move, Boolean>>() {
+		Function<BiFunction<Position.Move, Boolean, Boolean>, Function<Position.Move, Boolean>> previouser = new Function<BiFunction<Position.Move, Boolean, Boolean>, Function<Position.Move, Boolean>>() {
 			private int index = 0;
 
 			@Override
-			public Function<Move, Boolean> apply(BiFunction<Move, Boolean, Boolean> function) {
+			public Function<Position.Move, Boolean> apply(BiFunction<Position.Move, Boolean, Boolean> function) {
 				int previousIndex = index++;
 				return move -> {
 					Boolean bit = function.apply(move, bitsMemory[previousIndex]);
@@ -283,26 +282,26 @@ public interface AgentColorizer {
 				};
 			}
 		};
-		Function<Move, Boolean> redBit = previouser.apply((move, previous) -> {
+		Function<Position.Move, Boolean> redBit = previouser.apply((move, previous) -> {
 			int dX = move.dX();
 			return dX > 0 ? true //
 					: dX < 0 ? false //
 							: previous;
 		});
-		Function<Move, Boolean> greenBit = previouser.apply((move, previous) -> {
+		Function<Position.Move, Boolean> greenBit = previouser.apply((move, previous) -> {
 			int dY = move.dY();
 			return dY > 0 ? true //
 					: dY < 0 ? false //
 							: previous;
 		});
-		Function<Move, Boolean> blueBit = previouser.apply((move, previous) -> {
+		Function<Position.Move, Boolean> blueBit = previouser.apply((move, previous) -> {
 			int dX = move.dX();
 			int dY = move.dY();
 			return dX > dY ? true //
 					: dX < dY ? false //
 							: previous;
 		});
-		Function<Move, Boolean> alphaBit = previouser.apply((move, previous) -> {
+		Function<Position.Move, Boolean> alphaBit = previouser.apply((move, previous) -> {
 			int dX = move.dX();
 			int dY = move.dY();
 			return dX == dY;
@@ -330,7 +329,7 @@ public interface AgentColorizer {
 			for (int i = 0; i < Byte.SIZE; i++) {
 				network.setInputs(Position.at(x, y));
 				network.fire();
-				Move move = network.output();
+				Position.Move move = network.output();
 
 				bits.set(redMinIndex + i, redBit.apply(move));
 				bits.set(greenMinIndex + i, greenBit.apply(move));

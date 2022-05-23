@@ -136,4 +136,8 @@ public class Terrain {
 	private Stream<Integer> range(int startInclusive, int endExclusive) {
 		return IntStream.range(startInclusive, endExclusive).mapToObj(i -> i);
 	}
+
+	public Position.Bounds bounds() {
+		return Position.Bounds.between(minPosition(), maxPosition());
+	}
 }

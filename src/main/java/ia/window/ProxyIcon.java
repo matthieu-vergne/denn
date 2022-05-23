@@ -1,5 +1,7 @@
 package ia.window;
 
+import static java.util.Objects.*;
+
 import java.awt.Component;
 import java.awt.Graphics;
 
@@ -9,8 +11,15 @@ public class ProxyIcon implements Icon {
 
 	private Icon delegate;
 
-	public void setDelegate(Icon delegate) {
+	public ProxyIcon(Icon initialDelegate) {
+		setDelegate(initialDelegate);
+	}
+
+	public Icon setDelegate(Icon delegate) {
+		requireNonNull(delegate);
+		Icon oldDelegate = this.delegate;
 		this.delegate = delegate;
+		return oldDelegate;
 	}
 
 	@Override

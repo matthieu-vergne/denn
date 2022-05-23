@@ -4,12 +4,10 @@ import static java.util.Objects.*;
 
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Program;
-import ia.terrain.Move;
 import ia.terrain.Position;
 
 public class Agent {
 
-	
 	private final Chromosome chromosome;
 	private final NeuralNetwork neuralNetwork;
 
@@ -31,7 +29,7 @@ public class Agent {
 	public Position decideNextPosition(Position position) {
 		neuralNetwork.setInputs(position);
 		neuralNetwork.fire();
-		Move move = neuralNetwork.output();
+		Position.Move move = neuralNetwork.output();
 		return position.move(move);
 	}
 

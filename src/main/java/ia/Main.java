@@ -156,7 +156,7 @@ public class Main {
 		placer.accept(mainProgram, terrain.maxPosition());
 		placer.accept(programFactory.centerMover(terrain),
 				Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
-		placer.accept(mainProgram, Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
+		placer.accept(programFactory.randomMover(), Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
 		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 4 / 10));
 		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 6 / 10));
 	}

@@ -13,6 +13,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.Rectangle;
 import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -21,12 +22,15 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.WeakHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import javax.swing.AbstractAction;
+import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
@@ -35,6 +39,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
+import javax.swing.RepaintManager;
 import javax.swing.border.TitledBorder;
 
 import ia.agent.Agent;
@@ -58,6 +63,78 @@ public class Window {
 
 	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<List<Button>> buttons,
 			int compositeActionsPerSecond, NeuralNetwork.Factory networkFactory) {
+		WeakHashMap<TerrainPanel, List<Rectangle>> dirtyRegions = new WeakHashMap<>();
+		AtomicReference<Runnable> availablePainter = new AtomicReference<Runnable>();
+		Runnable painter = new Runnable() {
+
+			@Override
+			public void run() {
+				if (isWindowClosed) {
+					return;
+				}
+				availablePainter.set(this);
+				dirtyRegions.entrySet().forEach(entry -> {
+					TerrainPanel terrainPanel = entry.getKey();
+					List<Rectangle> rectangles = dirtyRegions.get(terrainPanel);
+					rectangles.forEach(rectangle -> {
+						terrainPanel.paintImmediately(rectangle);
+					});
+					rectangles.clear();
+				});
+//				invokeLater(this);
+			}
+		};
+		//invokeLater(painter);
+		availablePainter.set(painter);
+		RepaintManager.setCurrentManager(new RepaintManager() {
+
+			@Override
+			public void addDirtyRegion(JComponent c, int x, int y, int w, int h) {
+				if (c instanceof TerrainPanel s) {
+					Rectangle rectangle = new Rectangle(x, y, w, h);
+					List<Rectangle> rectangles = dirtyRegions.computeIfAbsent(s, k -> new LinkedList<>());
+					if (rectangles.isEmpty()) {
+						rectangles.add(rectangle);
+					} else {
+						rectangles.add(rectangles.remove(0).union(rectangle));
+					}
+					Runnable updater = availablePainter.getAndSet(null);
+					if (updater != null) {
+						invokeLater(updater);
+					}
+				} else {
+					super.addDirtyRegion(c, x, y, w, h);
+				}
+			}
+
+			@Override
+			public Rectangle getDirtyRegion(JComponent c) {
+				if (c instanceof TerrainPanel s) {
+					throw new RuntimeException("Not implemented");
+				} else {
+					return super.getDirtyRegion(c);
+				}
+			}
+
+			@Override
+			public void markCompletelyDirty(JComponent c) {
+				if (c instanceof TerrainPanel s) {
+					throw new RuntimeException("Not implemented");
+				} else {
+					super.markCompletelyDirty(c);
+				}
+			}
+
+			@Override
+			public void markCompletelyClean(JComponent c) {
+				if (c instanceof TerrainPanel s) {
+					throw new RuntimeException("Not implemented");
+				} else {
+					super.markCompletelyClean(c);
+				}
+			}
+
+		});
 
 		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons,
 				compositeActionsPerSecond, networkFactory);
@@ -214,24 +291,39 @@ public class Window {
 		attractorsConstraint.weighty = 0;
 		attractorsInfoPanel.add(new JPanel(), attractorsConstraint);
 
-		ProxyIcon attractorsInfoIcon = new ProxyIcon();
 		NoIcon noProgressIcon = new NoIcon();
 		ProgressIcon progressIcon = new ProgressIcon(16);
+		ProxyIcon attractorsInfoIcon = new ProxyIcon(noProgressIcon);
+		Runnable iconRepainter = () -> {
+			JTabbedPane parent = (JTabbedPane) attractorsInfoPanel.getParent();
+			int tabIndex = parent.indexOfTab(attractorsInfoIcon);
+			Rectangle tabHeaderBounds = parent.getBoundsAt(tabIndex);
+			parent.repaint(tabHeaderBounds);
+		};
 		Consumer<Boolean> progressIconEnabler = enabled -> {
-			attractorsInfoIcon.setDelegate(enabled ? progressIcon : noProgressIcon);
-			Container parent = attractorsInfoPanel.getParent();
-			parent.revalidate();
-			parent.repaint();
+			Icon delegate = enabled ? progressIcon : noProgressIcon;
+			attractorsInfoIcon.setDelegate(delegate);
+			iconRepainter.run();
 		};
 		Consumer<Double> progressUpdater = percent -> {
 			progressIcon.setProgress(percent);
-			Container parent = attractorsInfoPanel.getParent();
-			parent.revalidate();
-			parent.repaint();
+			iconRepainter.run();
 		};
 		Agent[] agentToComputeFor = { null };
 		Runnable[] stop = { () -> {
 		} };
+
+		// TODO CardLayout
+//		CardLayout cardLayout = new CardLayout();
+//		JPanel card = new JPanel(cardLayout);
+//
+//		String noAgentNotice = "No agent there";
+//		programInfoArea.setText(noAgentNotice);
+//		JLabel noAgentLabel = new JLabel(noAgentNotice);
+//		card.add(noAgentLabel);
+//
+//		cardLayout.first(card);
+
 		mouseOnTerrain.listenClick(position -> {
 			selectLabel.setText(position.toString());
 			Agent previousAgent = agentToComputeFor[0];
@@ -426,13 +518,17 @@ public class Window {
 		this.filters.add(filter);
 	}
 
-	@SuppressWarnings("unused")
-	private static void logCurrentMethod() {
-		System.out.println(Thread.currentThread().getStackTrace()[2].getMethodName());
+	public static void logCurrentMethod(Object... args) {
+		System.out.println(getCurrentMethodInternal(args));
 	}
 
-	@SuppressWarnings("unused")
-	private static String getCurrentMethod() {
-		return Thread.currentThread().getStackTrace()[2].getMethodName();
+	public static String getCurrentMethod(Object... args) {
+		return getCurrentMethodInternal(args);
+	}
+
+	private static String getCurrentMethodInternal(Object... args) {
+		String methodName = Thread.currentThread().getStackTrace()[3].getMethodName();
+		String values = Stream.of(args).map(Object::toString).collect(joining(", "));
+		return methodName + "(" + values + ")";
 	}
 }

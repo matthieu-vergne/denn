@@ -40,28 +40,34 @@ public class TerrainPanel extends JPanel {
 		this.drawerSupplier = drawerSupplier;
 	}
 
-	public void repaint(Position lastPosition) {
+	@Override
+	public boolean isOpaque() {
+		return true;
+	}
+
+	@Override
+	public boolean isOptimizedDrawingEnabled() {
+		return true;
+	}
+
+	public void repaint(Position position) {
 		Rectangle componentBounds = this.getBounds();
 		int componentWidth = componentBounds.width;
 		int componentHeight = componentBounds.height;
 		double cellWidth = (double) componentWidth / terrain.width();
 		double cellHeight = (double) componentHeight / terrain.height();
 
-		int x = (int) (lastPosition.x * cellWidth);
-		int y = (int) (lastPosition.y * cellHeight);
-		System.out.println("REPAINT (" + x + "," + y + ")x(" + cellWidth + "," + cellHeight + ")");
-		repaint(x, y, (int) cellWidth, (int) cellHeight);
-		// FIXME https://www.oracle.com/java/technologies/painting.html
+		int x = (int) floor(position.x * cellWidth);
+		int y = (int) floor(position.y * cellHeight);
+		repaint(x, y, (int) ceil(cellWidth), (int) ceil(cellHeight));
 	}
 
 	@Override
 	protected void paintComponent(Graphics graphics) {
-		System.out.println(graphics.getClip());
-		new Exception().printStackTrace();
 		paint(DrawContext.create(terrain, this, graphics).atComponent());
 	}
 
-	protected void paint(DrawContext ctx) {
+	private void paint(DrawContext ctx) {
 		draw(ctx, drawerSupplier.get());
 	}
 
@@ -99,7 +105,7 @@ public class TerrainPanel extends JPanel {
 			return ctx -> {
 				Rectangle bounds = ctx.graphics.getClipBounds();
 				ctx.graphics.setColor(color);
-				ctx.graphics.fillRect(0, 0, bounds.width, bounds.height);
+				ctx.graphics.fillRect(bounds.x, bounds.y, bounds.width, bounds.height);
 			};
 		}
 
@@ -168,13 +174,12 @@ public class TerrainPanel extends JPanel {
 	public static record Pointer(Position position, PointerRenderer renderer) {
 	}
 
-	// TODO Privatize this method
-	protected void draw(DrawContext ctx, Drawer drawer) {
+	private void draw(DrawContext ctx, Drawer drawer) {
 		drawer.draw(ctx);
 	}
 
-	record DrawContext(Graphics2D graphics, Terrain terrain, int componentWidth, int componentHeight, double cellWidth,
-			double cellHeight) {
+	record DrawContext(Graphics2D graphics, Terrain terrain, PositionConverter pixelToTerrain, int componentWidth,
+			int componentHeight, double cellWidth, double cellHeight) {
 
 		public static DrawContext create(Terrain terrain, JComponent component, Graphics graphics) {
 			Graphics2D graphics2D = (Graphics2D) graphics;
@@ -184,15 +189,26 @@ public class TerrainPanel extends JPanel {
 			int componentHeight = componentBounds.height;
 			double cellWidth = (double) componentWidth / terrain.width();
 			double cellHeight = (double) componentHeight / terrain.height();
+
+			Position minPixel = Position.at(0, 0);
+			Position maxPixel = Position.at(componentWidth - 1, componentHeight - 1);
+			Position minPosition = terrain.minPosition();
+			Position maxPosition = terrain.maxPosition();
+			PositionConverter pixelToTerrain = new PositionConverter(//
+					minPixel.boundsTo(maxPixel), //
+					minPosition.boundsTo(maxPosition)//
+			);
+
 			return new DrawContext(//
-					graphics2D, terrain, //
+					graphics2D, terrain, pixelToTerrain, //
 					componentWidth, componentHeight, //
 					cellWidth, cellHeight//
 			);
 		}
 
 		public DrawContext onGraphics(Graphics2D graphics2D) {
-			return new DrawContext(graphics2D, terrain, componentWidth, componentHeight, cellWidth, cellHeight);
+			return new DrawContext(graphics2D, terrain, pixelToTerrain, componentWidth, componentHeight, cellWidth,
+					cellHeight);
 		}
 
 		public DrawContext atComponent() {
@@ -200,9 +216,10 @@ public class TerrainPanel extends JPanel {
 		}
 
 		public DrawContext atCell(Position position) {
-			int x = (int) (position.x * cellWidth);
-			int y = (int) (position.y * cellHeight);
-			return onGraphics((Graphics2D) graphics.create(x, y, (int) cellWidth, (int) cellHeight));
+			// Prefer covering 1px too much (floor min & ceil max) than having holes
+			int x = (int) floor(position.x * cellWidth);
+			int y = (int) floor(position.y * cellHeight);
+			return onGraphics((Graphics2D) graphics.create(x, y, (int) ceil(cellWidth), (int) ceil(cellHeight)));
 		}
 	}
 

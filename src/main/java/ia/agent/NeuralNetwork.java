@@ -16,7 +16,6 @@ import java.util.function.Supplier;
 import java.util.stream.DoubleStream;
 
 import ia.agent.adn.Program;
-import ia.terrain.Move;
 import ia.terrain.Position;
 
 public interface NeuralNetwork {
@@ -25,7 +24,7 @@ public interface NeuralNetwork {
 
 	void fire();
 
-	Move output();
+	Position.Move output();
 
 	public static record NeuronPair(Object input, Object output) {
 	};
@@ -215,8 +214,8 @@ public interface NeuralNetwork {
 				}
 
 				@Override
-				public Move output() {
-					return Move.create(//
+				public Position.Move output() {
+					return Position.Move.create(//
 							toUnitaryMove(readSignal(neurons, dXIndex)), //
 							toUnitaryMove(readSignal(neurons, dYIndex))//
 					);
