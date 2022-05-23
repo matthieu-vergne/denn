@@ -116,6 +116,17 @@ public class Position {
 					Position.at(rectangle.x + rectangle.width - 1, rectangle.y + rectangle.height - 1)//
 			);
 		}
+
+		public static Bounds around(Position position, int radius) {
+			return around(position, radius, radius);
+		}
+		
+		public static Bounds around(Position position, int xRadius, int yRadius) {
+			return between(//
+					position.move(-xRadius, -yRadius), //
+					position.move(xRadius, yRadius)//
+			);
+		}
 	}
 
 	public record Move(int dX, int dY) {

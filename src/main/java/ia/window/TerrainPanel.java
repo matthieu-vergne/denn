@@ -50,6 +50,17 @@ public class TerrainPanel extends JPanel {
 		return true;
 	}
 
+	public PositionConverter pixelToTerrain() {
+		Position minPixel = Position.ORIGIN;
+		Position maxPixel = Position.at(this.getWidth() - 1, this.getHeight() - 1);
+		Position.Bounds pixelBounds = Position.Bounds.between(minPixel, maxPixel);
+		return new PositionConverter(pixelBounds, terrain.bounds());
+	}
+
+	public void repaint(Position.Bounds bounds) {
+		bounds.allPositions().forEach(this::repaint);
+	}
+
 	public void repaint(Position position) {
 		Rectangle componentBounds = this.getBounds();
 		int componentWidth = componentBounds.width;
@@ -57,9 +68,16 @@ public class TerrainPanel extends JPanel {
 		double cellWidth = (double) componentWidth / terrain.width();
 		double cellHeight = (double) componentHeight / terrain.height();
 
+		repaint(rectangleOverPosition(position, cellWidth, cellHeight));
+	}
+
+	private static Rectangle rectangleOverPosition(Position position, double cellWidth, double cellHeight) {
+		// Prefer covering 1px too much (floor min & ceil max) than having holes
 		int x = (int) floor(position.x * cellWidth);
 		int y = (int) floor(position.y * cellHeight);
-		repaint(x, y, (int) ceil(cellWidth), (int) ceil(cellHeight));
+		int width = (int) ceil(cellWidth);
+		int height = (int) ceil(cellHeight);
+		return new Rectangle(x, y, width, height);
 	}
 
 	@Override
@@ -155,19 +173,25 @@ public class TerrainPanel extends JPanel {
 	}
 
 	public static enum PointerRenderer {
-		THIN_SQUARE(drawerFactory -> drawerFactory.thinSquareDrawer(Color.BLACK)), //
-		THICK_SQUARE(drawerFactory -> drawerFactory.thickSquareDrawer(Color.BLACK, 10)), //
-		TARGET(drawerFactory -> drawerFactory.targetDrawer(Color.BLACK, 5)),//
+		THIN_SQUARE(drawerFactory -> drawerFactory.thinSquareDrawer(Color.BLACK), 0), //
+		THICK_SQUARE(drawerFactory -> drawerFactory.thickSquareDrawer(Color.BLACK, 10), 15), //
+		TARGET(drawerFactory -> drawerFactory.targetDrawer(Color.BLACK, 5), 10),//
 		;
 
 		private final Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver;
+		private final int radius;
 
-		private PointerRenderer(Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver) {
+		private PointerRenderer(Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver, int radius) {
 			this.resolver = resolver;
+			this.radius = radius;
 		}
 
 		BiConsumer<Integer, Integer> createDrawer(DrawerFactory drawerFactory) {
 			return resolver.apply(drawerFactory);
+		}
+
+		int radius() {
+			return radius;
 		}
 	}
 
@@ -216,10 +240,8 @@ public class TerrainPanel extends JPanel {
 		}
 
 		public DrawContext atCell(Position position) {
-			// Prefer covering 1px too much (floor min & ceil max) than having holes
-			int x = (int) floor(position.x * cellWidth);
-			int y = (int) floor(position.y * cellHeight);
-			return onGraphics((Graphics2D) graphics.create(x, y, (int) ceil(cellWidth), (int) ceil(cellHeight)));
+			Rectangle rect = rectangleOverPosition(position, cellWidth, cellHeight);
+			return onGraphics((Graphics2D) graphics.create(rect.x, rect.y, rect.width, rect.height));
 		}
 	}
 

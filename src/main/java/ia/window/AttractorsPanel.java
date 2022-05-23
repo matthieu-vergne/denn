@@ -77,29 +77,23 @@ public class AttractorsPanel extends TerrainPanel {
 		}
 		Context ctx = new Context();
 
-		Supplier<Drawer> drawerSupplier = () -> {
-			AttractorsPanel attractorsPanel = ctx.attractorsPanel;
-			Position.Bounds componentBounds = Position.Bounds.between(Position.at(0, 0),
-					Position.at(attractorsPanel.getWidth() - 1, attractorsPanel.getHeight() - 1));
-			PositionConverter pixelToTerrain = new PositionConverter(componentBounds, terrain.bounds());
-			Drawer backgroundDrawer = filler(Color.WHITE);
-			return dCtx -> {
-				Position.Bounds componentClipBounds = Position.Bounds.from(dCtx.graphics().getClipBounds());
-				Position.Bounds terrainClipBounds = pixelToTerrain.convert(componentClipBounds);
-				Stream<Position> terrainClipPositions = terrainClipBounds.allPositions();
-				// TODO Redraw all on scale update (min/max)
-				// TODO Fix graphics artifacts because of rounding
-				// TODO Optimize large surface drawing
-				Drawer requestedDrawer = Drawer.forEachPosition(terrainClipPositions, position -> {
-					if (ctx.hasAttractor.test(position)) {
-						Color color = ctx.attractorColorizer.apply(position);
-						return backgroundDrawer.then(filler(color));
-					} else {
-						return backgroundDrawer;
-					}
-				});
-				requestedDrawer.draw(dCtx);
-			};
+		Drawer backgroundDrawer = filler(Color.WHITE);
+		Supplier<Drawer> drawerSupplier = () -> dCtx -> {
+			Position.Bounds componentClipBounds = Position.Bounds.from(dCtx.graphics().getClipBounds());
+			Position.Bounds terrainClipBounds = ctx.attractorsPanel.pixelToTerrain().convert(componentClipBounds);
+			Stream<Position> terrainClipPositions = terrainClipBounds.allPositions();
+			// TODO Redraw all on scale update (min/max)
+			// TODO Fix graphics artifacts because of rounding
+			// TODO Optimize large surface drawing
+			Drawer requestedDrawer = Drawer.forEachPosition(terrainClipPositions, position -> {
+				if (ctx.hasAttractor.test(position)) {
+					Color color = ctx.attractorColorizer.apply(position);
+					return backgroundDrawer.then(filler(color));
+				} else {
+					return backgroundDrawer;
+				}
+			});
+			requestedDrawer.draw(dCtx);
 		};
 		List<Consumer<Double>> progressListeners = new LinkedList<>();
 		Consumer<Program> tasker = program -> {

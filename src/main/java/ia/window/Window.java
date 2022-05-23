@@ -47,6 +47,7 @@ import ia.agent.NeuralNetwork;
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Program;
 import ia.terrain.Position;
+import ia.terrain.Position.Bounds;
 import ia.terrain.Terrain;
 import ia.window.TerrainPanel.DrawContext;
 import ia.window.TerrainPanel.Drawer;
@@ -84,7 +85,7 @@ public class Window {
 //				invokeLater(this);
 			}
 		};
-		//invokeLater(painter);
+		// invokeLater(painter);
 		availablePainter.set(painter);
 		RepaintManager.setCurrentManager(new RepaintManager() {
 
@@ -220,11 +221,14 @@ public class Window {
 	private TerrainPanel createTerrainPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
 			MouseOnTerrain mouseOnTerrain) {
 		Position[] positionOf = { null, null };
+		PointerRenderer[] rendererOf = { null, null };
 		int mouse = 0;
 		int selection = 1;
+		rendererOf[mouse] = PointerRenderer.THICK_SQUARE;
+		rendererOf[selection] = PointerRenderer.TARGET;
 		Supplier<Stream<Pointer>> pointersSupplier = () -> Stream.of(//
-				new Pointer(positionOf[mouse], PointerRenderer.THIN_SQUARE), //
-				new Pointer(positionOf[selection], PointerRenderer.TARGET)//
+				new Pointer(positionOf[mouse], rendererOf[mouse]), //
+				new Pointer(positionOf[selection], rendererOf[selection])//
 		).filter(pointer -> pointer.position() != null);
 
 		TerrainPanel terrainPanel = new TerrainPanel(terrain, () -> {
@@ -248,16 +252,35 @@ public class Window {
 			return backgroundDrawer.then(filterDrawer).then(agentDrawer).then(pointersDrawer);
 		});
 		mouseOnTerrain.listenMove(position -> {
+			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = position;
-			terrainPanel.repaint();
+
+			// FIXME compute resize-friendly radius
+			int pixelRadius = rendererOf[mouse].radius();
+			Position radius = terrainPanel.pixelToTerrain().convert(Position.at(pixelRadius, pixelRadius));
+			if (previousPosition != null) {
+				terrainPanel.repaint(Position.Bounds.around(previousPosition, radius.x, radius.y));
+			}
+			terrainPanel.repaint(Position.Bounds.around(position, radius.x, radius.y));
 		});
 		mouseOnTerrain.listenExit(() -> {
+			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = null;
-			terrainPanel.repaint();
+
+			// FIXME compute resize-friendly radius
+			int radius = rendererOf[mouse].radius();
+			terrainPanel.repaint(Position.Bounds.around(previousPosition, radius));
 		});
 		mouseOnTerrain.listenClick(position -> {
+			Position previousPosition = positionOf[selection];
 			positionOf[selection] = position;
-			terrainPanel.repaint();
+
+			// FIXME compute resize-friendly radius
+			int radius = rendererOf[selection].radius();
+			if (previousPosition != null) {
+				terrainPanel.repaint(Position.Bounds.around(previousPosition, radius));
+			}
+			terrainPanel.repaint(Position.Bounds.around(position, radius));
 		});
 
 		terrainPanel.setPreferredSize(new Dimension(//
