@@ -1,29 +1,52 @@
 package ia.window;
 
 import static ia.window.TerrainPanel.Drawer.*;
-import static java.time.Instant.*;
+import static java.lang.Math.*;
 import static java.util.stream.Collectors.*;
 import static javax.swing.SwingUtilities.*;
 import static javax.swing.WindowConstants.*;
 
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.Container;
 import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GraphicsConfiguration;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.Image;
 import java.awt.Insets;
+import java.awt.Paint;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.RenderingHints.Key;
+import java.awt.Shape;
+import java.awt.Stroke;
 import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.time.Instant;
+import java.awt.font.FontRenderContext;
+import java.awt.font.GlyphVector;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
+import java.awt.image.BufferedImageOp;
+import java.awt.image.ImageObserver;
+import java.awt.image.RenderedImage;
+import java.awt.image.renderable.RenderableImage;
+import java.text.AttributedCharacterIterator;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -47,7 +70,6 @@ import ia.agent.NeuralNetwork;
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Program;
 import ia.terrain.Position;
-import ia.terrain.Position.Bounds;
 import ia.terrain.Terrain;
 import ia.window.TerrainPanel.DrawContext;
 import ia.window.TerrainPanel.Drawer;
@@ -63,7 +85,7 @@ public class Window {
 	private final List<Runnable> closeListeners = new LinkedList<>();
 
 	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<List<Button>> buttons,
-			int compositeActionsPerSecond, NeuralNetwork.Factory networkFactory) {
+			NeuralNetwork.Factory networkFactory) {
 		WeakHashMap<TerrainPanel, List<Rectangle>> dirtyRegions = new WeakHashMap<>();
 		AtomicReference<Runnable> availablePainter = new AtomicReference<Runnable>();
 		Runnable painter = new Runnable() {
@@ -137,8 +159,7 @@ public class Window {
 
 		});
 
-		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons,
-				compositeActionsPerSecond, networkFactory);
+		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons, networkFactory);
 
 		JTabbedPane tabs = new JTabbedPane();
 		tabs.add("Simulation", simulationPanel);
@@ -163,7 +184,7 @@ public class Window {
 	}
 
 	private JPanel createSimulationPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			List<List<Button>> buttons, int compositeActionsPerSecond, NeuralNetwork.Factory networkFactory) {
+			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory) {
 		MouseOnTerrain mouseOnTerrain = new MouseOnTerrain();
 
 		TerrainPanel terrainPanel = createTerrainPanel(terrain, cellSize, agentColorizer, mouseOnTerrain);
@@ -171,8 +192,7 @@ public class Window {
 		JPanel[] buttonsPanel = { null };
 		Consumer<Boolean> buttonsEnabler = enable -> Stream.of(buttonsPanel[0].getComponents())
 				.forEach(component -> component.setEnabled(enable));
-		buttonsPanel[0] = createButtonsPanel(
-				withRepaint(buttons, terrainPanel, buttonsEnabler, compositeActionsPerSecond));
+		buttonsPanel[0] = createButtonsPanel(withRepaint(buttons, terrainPanel, buttonsEnabler));
 		buttonsPanel[0].setBorder(new TitledBorder("Actions"));
 
 		MouseOnTerrain.TerrainPanelListener listener = mouseOnTerrain.terrainPanelListener(terrain, terrainPanel);
@@ -224,7 +244,7 @@ public class Window {
 		PointerRenderer[] rendererOf = { null, null };
 		int mouse = 0;
 		int selection = 1;
-		rendererOf[mouse] = PointerRenderer.THICK_SQUARE;
+		rendererOf[mouse] = PointerRenderer.THIN_SQUARE;
 		rendererOf[selection] = PointerRenderer.TARGET;
 		Supplier<Stream<Pointer>> pointersSupplier = () -> Stream.of(//
 				new Pointer(positionOf[mouse], rendererOf[mouse]), //
@@ -255,32 +275,27 @@ public class Window {
 			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = position;
 
-			// FIXME compute resize-friendly radius
-			int pixelRadius = rendererOf[mouse].radius();
-			Position radius = terrainPanel.pixelToTerrain().convert(Position.at(pixelRadius, pixelRadius));
+			PointerRenderer pointerRenderer = rendererOf[mouse];
 			if (previousPosition != null) {
-				terrainPanel.repaint(Position.Bounds.around(previousPosition, radius.x, radius.y));
+				terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, previousPosition, pointerRenderer));
 			}
-			terrainPanel.repaint(Position.Bounds.around(position, radius.x, radius.y));
+			terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, position, pointerRenderer));
 		});
 		mouseOnTerrain.listenExit(() -> {
 			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = null;
 
-			// FIXME compute resize-friendly radius
-			int radius = rendererOf[mouse].radius();
-			terrainPanel.repaint(Position.Bounds.around(previousPosition, radius));
+			terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, previousPosition, rendererOf[mouse]));
 		});
 		mouseOnTerrain.listenClick(position -> {
 			Position previousPosition = positionOf[selection];
 			positionOf[selection] = position;
 
-			// FIXME compute resize-friendly radius
-			int radius = rendererOf[selection].radius();
 			if (previousPosition != null) {
-				terrainPanel.repaint(Position.Bounds.around(previousPosition, radius));
+				terrainPanel.repaint(
+						retrieveDrawnPositions(terrain, terrainPanel, previousPosition, rendererOf[selection]));
 			}
-			terrainPanel.repaint(Position.Bounds.around(position, radius));
+			terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, position, rendererOf[selection]));
 		});
 
 		terrainPanel.setPreferredSize(new Dimension(//
@@ -288,6 +303,23 @@ public class Window {
 				terrain.height() * cellSize - 1//
 		));
 		return terrainPanel;
+	}
+
+	// TODO Simplify
+	private Position.Bounds retrieveDrawnPositions(Terrain terrain, TerrainPanel terrainPanel, Position position,
+			PointerRenderer pointerRenderer) {
+		PositionConverter pixelToTerrain = terrainPanel.pixelToTerrain();
+		PositionConverter terrainToPixel = pixelToTerrain.reverse();
+		Position cellRef = terrainToPixel.convert(Position.at(1, 1));
+		GraphicsCatcher graphics = new GraphicsCatcher();
+		DrawContext dc = new DrawContext(graphics, terrain, pixelToTerrain, terrainPanel.getWidth(),
+				terrainPanel.getHeight(), cellRef.x, cellRef.y);
+		DrawerFactory df = new DrawerFactory(dc);
+		BiConsumer<Integer, Integer> drawer = pointerRenderer.createDrawer(df);
+		Position cell = terrainToPixel.convert(position);
+		drawer.accept(cell.x, cell.y);
+		Position.Bounds drawnBounds = graphics.catchedBounds();
+		return pixelToTerrain.convert(drawnBounds).extend(pointerRenderer.extraStroke());
 	}
 
 	// TODO Simplify
@@ -440,46 +472,32 @@ public class Window {
 	}
 
 	private List<List<Button>> withRepaint(List<List<Button>> buttons, TerrainPanel terrainPanel,
-			Consumer<Boolean> buttonsEnabler, int compositeActionsPerSecond) {
+			Consumer<Boolean> buttonsEnabler) {
 		return buttons.stream()
-				.map(row -> row.stream()
-						.map(toButtonWithRepaint(terrainPanel, buttonsEnabler, compositeActionsPerSecond))
-						.collect(toList()))
+				.map(row -> row.stream().map(toButtonWithRepaint(terrainPanel, buttonsEnabler)).collect(toList()))
 				.collect(toList());
 	}
 
-	private Function<Button, Button> toButtonWithRepaint(TerrainPanel terrainPanel, Consumer<Boolean> buttonsEnabler,
-			int compositeActionsPerSecond) {
-		int stepPeriodMillis = 1000 / compositeActionsPerSecond;
+	private Function<Button, Button> toButtonWithRepaint(TerrainPanel terrainPanel, Consumer<Boolean> buttonsEnabler) {
 		return button -> {
 			Button.Action action = button.action;
 			if (action instanceof Button.CompositeAction comp) {
 				return Button.create(button.title, () -> {
 					buttonsEnabler.accept(false);
+					invokeLater(stopIfWindowClosed(new Runnable() {
+						Iterator<Button.Action> iterator = comp.steps().iterator();
 
-					Iterator<Button.Action> iterator = comp.steps().iterator();
-					Runnable[] tasks = { null, null };
-					int nextStep = 0;
-					int wait = 1;
-					Instant[] reservedTime = { null };
-
-					tasks[nextStep] = stopIfWindowClosed(() -> {
-						if (iterator.hasNext()) {
-							reservedTime[0] = now().plusMillis(stepPeriodMillis);
-							iterator.next().execute();
-							terrainPanel.repaint();
-							invokeLater(tasks[wait]);
-						} else {
-							buttonsEnabler.accept(true);
+						@Override
+						public void run() {
+							if (iterator.hasNext()) {
+								iterator.next().execute();
+								terrainPanel.repaint();
+								invokeLater(this);
+							} else {
+								buttonsEnabler.accept(true);
+							}
 						}
-					});
-
-					tasks[wait] = stopIfWindowClosed(() -> {
-						int next = now().isAfter(reservedTime[0]) ? nextStep : wait;
-						invokeLater(tasks[next]);
-					});
-
-					invokeLater(tasks[nextStep]);
+					}));
 				});
 			} else {
 				return Button.create(button.title, () -> {
@@ -529,8 +547,8 @@ public class Window {
 	}
 
 	public static Window create(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			int compositeActionsPerSecond, List<List<Button>> buttons, NeuralNetwork.Factory networkFactory) {
-		return new Window(terrain, cellSize, agentColorizer, buttons, compositeActionsPerSecond, networkFactory);
+			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory) {
+		return new Window(terrain, cellSize, agentColorizer, buttons, networkFactory);
 	}
 
 	public void setSize(int width, int height) {
@@ -551,7 +569,382 @@ public class Window {
 
 	private static String getCurrentMethodInternal(Object... args) {
 		String methodName = Thread.currentThread().getStackTrace()[3].getMethodName();
-		String values = Stream.of(args).map(Object::toString).collect(joining(", "));
+		String values = Stream.of(args).map(Objects::toString).collect(joining(", "));
 		return methodName + "(" + values + ")";
+	}
+
+	private static class GraphicsCatcher extends Graphics2D {
+		private int minX = Integer.MAX_VALUE;
+		private int minY = Integer.MAX_VALUE;
+		private int maxX = Integer.MIN_VALUE;
+		private int maxY = Integer.MIN_VALUE;
+		private Stroke stroke;
+
+		public Position.Bounds catchedBounds() {
+			return Position.Bounds.between(Position.at(minX, minY), Position.at(maxX, maxY));
+		}
+
+		private void update(int x, int y) {
+			minX = min(minX, x);
+			maxX = max(maxX, x);
+			minY = min(minY, y);
+			maxY = max(maxY, y);
+		}
+
+		@Override
+		public void draw(Shape s) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean drawImage(Image img, AffineTransform xform, ImageObserver obs) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawImage(BufferedImage img, BufferedImageOp op, int x, int y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawRenderedImage(RenderedImage img, AffineTransform xform) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawRenderableImage(RenderableImage img, AffineTransform xform) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawString(String str, int x, int y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawString(String str, float x, float y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawString(AttributedCharacterIterator iterator, int x, int y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawString(AttributedCharacterIterator iterator, float x, float y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawGlyphVector(GlyphVector g, float x, float y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void fill(Shape s) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean hit(Rectangle rect, Shape s, boolean onStroke) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public GraphicsConfiguration getDeviceConfiguration() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setComposite(Composite comp) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setPaint(Paint paint) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setStroke(Stroke s) {
+			stroke = s;
+		}
+
+		@Override
+		public void setRenderingHint(Key hintKey, Object hintValue) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Object getRenderingHint(Key hintKey) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setRenderingHints(Map<?, ?> hints) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void addRenderingHints(Map<?, ?> hints) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public RenderingHints getRenderingHints() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void translate(int x, int y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void translate(double tx, double ty) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void rotate(double theta) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void rotate(double theta, double x, double y) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void scale(double sx, double sy) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void shear(double shx, double shy) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void transform(AffineTransform Tx) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setTransform(AffineTransform Tx) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public AffineTransform getTransform() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Paint getPaint() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Composite getComposite() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setBackground(Color color) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Color getBackground() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Stroke getStroke() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void clip(Shape s) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public FontRenderContext getFontRenderContext() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Graphics create() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Color getColor() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setColor(Color c) {
+			// Nothing to do
+		}
+
+		@Override
+		public void setPaintMode() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setXORMode(Color c1) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Font getFont() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setFont(Font font) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public FontMetrics getFontMetrics(Font f) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Rectangle getClipBounds() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void clipRect(int x, int y, int width, int height) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setClip(int x, int y, int width, int height) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public Shape getClip() {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void setClip(Shape clip) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void copyArea(int x, int y, int width, int height, int dx, int dy) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawLine(int x1, int y1, int x2, int y2) {
+			update(x1, y1);
+			update(x2, y2);
+		}
+
+		@Override
+		public void fillRect(int x, int y, int width, int height) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void clearRect(int x, int y, int width, int height) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void fillRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawOval(int x, int y, int width, int height) {
+			update(x, y);
+			update(x + width - 1, y + height - 1);
+		}
+
+		@Override
+		public void fillOval(int x, int y, int width, int height) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void fillArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawPolyline(int[] xPoints, int[] yPoints, int nPoints) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void drawPolygon(int[] xPoints, int[] yPoints, int nPoints) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void fillPolygon(int[] xPoints, int[] yPoints, int nPoints) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean drawImage(Image img, int x, int y, ImageObserver observer) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean drawImage(Image img, int x, int y, int width, int height, ImageObserver observer) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean drawImage(Image img, int x, int y, Color bgcolor, ImageObserver observer) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean drawImage(Image img, int x, int y, int width, int height, Color bgcolor,
+				ImageObserver observer) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean drawImage(Image img, int dx1, int dy1, int dx2, int dy2, int sx1, int sy1, int sx2, int sy2,
+				ImageObserver observer) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public boolean drawImage(Image img, int dx1, int dy1, int dx2, int dy2, int sx1, int sy1, int sx2, int sy2,
+				Color bgcolor, ImageObserver observer) {
+			throw new RuntimeException("Not implemented");
+		}
+
+		@Override
+		public void dispose() {
+			throw new RuntimeException("Not implemented");
+		}
+
 	}
 }

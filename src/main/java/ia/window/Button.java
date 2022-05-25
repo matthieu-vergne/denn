@@ -1,7 +1,13 @@
 package ia.window;
 
-import java.util.function.Function;
-import java.util.stream.IntStream;
+import static ia.window.Button.Action.*;
+import static java.util.Collections.*;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Iterator;
+import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 public class Button {
@@ -11,57 +17,46 @@ public class Button {
 
 		default CompositeAction then(Action next) {
 			Action previous = this;
-			return new CompositeAction() {
-
-				@Override
-				public void execute() {
-					previous.execute();
-					next.execute();
-				}
-
-				@Override
-				public Stream<Action> steps() {
-					Stream<Action> previousSteps = previous instanceof CompositeAction comp ? comp.steps()
-							: Stream.of(previous);
-					Stream<Action> nextSteps = next instanceof CompositeAction comp ? comp.steps() : Stream.of(next);
-					return Stream.concat(previousSteps, nextSteps);
-				}
+			return () -> {
+				Stream<Action> previousSteps = previous instanceof CompositeAction comp1 ? comp1.steps()
+						: Stream.of(previous);
+				Stream<Action> nextSteps = next instanceof CompositeAction comp2 ? comp2.steps() : Stream.of(next);
+				return Stream.concat(previousSteps, nextSteps);
 			};
 		}
 
 		default Action times(int count) {
 			if (count < 0) {
 				throw new IllegalArgumentException("count must be >0: " + count);
-			} else if (count == 0) {
-				return noop();
-			} else {
-				Action action = this;
-				return new CompositeAction() {
-
-					@Override
-					public void execute() {
-						for (int i = 0; i < count; i++) {
-							action.execute();
-						}
-					}
-
-					Function<Action, Stream<Action>> decomposer;
-
-					@Override
-					public Stream<Action> steps() {
-						decomposer = act -> {
-							if (act instanceof CompositeAction comp) {
-								return comp.steps().flatMap(decomposer);
-							} else {
-								return Stream.of(act);
-							}
-						};
-						return IntStream.range(0, count)//
-								.mapToObj(i -> action)//
-								.flatMap(decomposer);
-					}
-				};
 			}
+			Action action = this;
+			return new CompositeAction() {
+
+				@Override
+				public Stream<Action> steps() {
+					class Context {
+						int iteration = 0;
+						Iterator<Action> iterator = emptyIterator();
+					}
+					Context ctx = new Context();
+					Action prepareNext = () -> {
+						while (!ctx.iterator.hasNext() && ctx.iteration++ < count) {
+							if (action instanceof CompositeAction comp) {
+								ctx.iterator = comp.steps().iterator();
+							} else {
+								ctx.iterator = Stream.of(action).iterator();
+							}
+						}
+					};
+					Predicate<Action> predicate = a -> ctx.iterator.hasNext();
+					UnaryOperator<Action> iterator = a -> () -> {
+						ctx.iterator.next().then(prepareNext).execute();
+					};
+
+					prepareNext.execute();
+					return Stream.iterate(noop(), predicate, iterator);
+				}
+			};
 		}
 
 		static Action noop() {
@@ -69,9 +64,25 @@ public class Button {
 				// noop
 			};
 		}
+
+		static CompositeAction wait(Duration duration) {
+			return () -> {
+				Instant[] instantOf = { Instant.MAX };
+				int end = 0;
+				Action seed = () -> instantOf[end] = Instant.now().plus(duration);
+				Predicate<Action> predicate = a -> Instant.now().isBefore(instantOf[end]);
+				UnaryOperator<Action> iterator = a -> noop();
+				return Stream.iterate(seed, predicate, iterator);
+			};
+		}
 	}
 
 	public static interface CompositeAction extends Action {
+		@Override
+		default void execute() {
+			steps().forEach(Action::execute);
+		}
+
 		Stream<Action> steps();
 	}
 

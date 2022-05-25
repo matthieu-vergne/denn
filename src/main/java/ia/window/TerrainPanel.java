@@ -174,24 +174,33 @@ public class TerrainPanel extends JPanel {
 
 	public static enum PointerRenderer {
 		THIN_SQUARE(drawerFactory -> drawerFactory.thinSquareDrawer(Color.BLACK), 0), //
-		THICK_SQUARE(drawerFactory -> drawerFactory.thickSquareDrawer(Color.BLACK, 10), 15), //
-		TARGET(drawerFactory -> drawerFactory.targetDrawer(Color.BLACK, 5), 10),//
+		THICK_SQUARE(drawerFactory -> drawerFactory.thickSquareDrawer(Color.BLACK, 10), 0), //
+		TARGET(drawerFactory -> drawerFactory.targetDrawer(Color.BLACK, 5), 1),//
 		;
 
 		private final Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver;
-		private final int radius;
+		private final int radiusFix;
 
-		private PointerRenderer(Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver, int radius) {
+		private PointerRenderer(Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver, int radiusFix) {
 			this.resolver = resolver;
-			this.radius = radius;
+			this.radiusFix = radiusFix;
 		}
 
 		BiConsumer<Integer, Integer> createDrawer(DrawerFactory drawerFactory) {
 			return resolver.apply(drawerFactory);
 		}
 
-		int radius() {
-			return radius;
+		/**
+		 * Drawing often occurs with single pixel strokes, but not always. With thicker
+		 * strokes, we may draw a bigger shape. For instance, a stroke of 3 pixels draws
+		 * 1 extra pixel out of the requested surface. This method returns this extra
+		 * pixels that might be drawn due to these thicker strokes.
+		 * 
+		 * @return the radius fix to apply
+		 */
+		// TODO Retrieve stroke thickness from the drawing process
+		int extraStroke() {
+			return radiusFix;
 		}
 	}
 
@@ -259,11 +268,11 @@ public class TerrainPanel extends JPanel {
 			};
 		}
 
-		public BiConsumer<Integer, Integer> thickSquareDrawer(Color color, int radius) {
+		public BiConsumer<Integer, Integer> thickSquareDrawer(Color color, int borderSize) {
 			return (x, y) -> {
-				for (int i = 0; i < radius; i++) {
+				for (int i = 0; i < borderSize; i++) {
 					Color rectColor = new Color(color.getRed(), color.getGreen(), color.getBlue(),
-							255 * (radius - i) / radius);
+							255 * (borderSize - i) / borderSize);
 					ctx.graphics().setColor(rectColor);
 					ctx.graphics().drawRect(x - i, y - i, (int) ctx.cellWidth() + 2 * i,
 							(int) ctx.cellHeight() + 2 * i);

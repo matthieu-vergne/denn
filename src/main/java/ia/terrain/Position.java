@@ -89,6 +89,22 @@ public class Position {
 			this.max = max;
 		}
 
+		public Bounds reduce(int radius) {
+			return reduce(radius, radius);
+		}
+
+		public Bounds reduce(int xRadius, int yRadius) {
+			return between(min.move(xRadius, yRadius), max.move(-xRadius, -yRadius));
+		}
+
+		public Bounds extend(int radius) {
+			return extend(radius, radius);
+		}
+
+		public Bounds extend(int xRadius, int yRadius) {
+			return reduce(-xRadius, -yRadius);
+		}
+
 		public Stream<Position> allPositions() {
 			return range(min.x, max.x).flatMap(x -> //
 			range(min.y, max.y).flatMap(y -> //

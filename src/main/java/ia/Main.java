@@ -2,8 +2,10 @@ package ia;
 
 import static ia.terrain.TerrainInteractor.*;
 import static java.lang.Math.*;
+import static java.time.temporal.ChronoUnit.*;
 
 import java.awt.Color;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +14,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import ia.agent.Agent;
 import ia.agent.Neural.Builder;
@@ -24,6 +27,7 @@ import ia.terrain.Terrain;
 import ia.terrain.TerrainInteractor.Condition;
 import ia.window.AgentColorizer;
 import ia.window.Window;
+import ia.window.Button.Action;
 import ia.window.Button;
 
 public class Main {
@@ -51,12 +55,10 @@ public class Main {
 		List<List<Button>> buttons = createButtons(random, terrain, networkFactory, programFactory, agentsLimit,
 				selectionCriterion, survivalRates, reproducer, mutator);
 		AgentColorizer agentColorizer = AgentColorizer.pickingOnBehaviour(terrain, networkFactory);
-		int compositeActionsPerSecond = 100;
 		int cellSize = 7;
 		// TODO Display network topography
 		// TODO Allow manual agent placement
-		Window window = Window.create(terrain, cellSize, agentColorizer, compositeActionsPerSecond, //
-				buttons, networkFactory);
+		Window window = Window.create(terrain, cellSize, agentColorizer, buttons, networkFactory);
 
 		float transparency = 0.3f;
 		Color safeColor = new Color(0.0f, 1.0f, 0.0f, transparency);
@@ -103,13 +105,7 @@ public class Main {
 			System.out.println("Survival success " + percent + "%");
 		};
 
-		Button.Action wait = () -> {
-			try {
-				Thread.sleep(1000);
-			} catch (InterruptedException cause) {
-				throw new RuntimeException(cause);
-			}
-		};
+		Button.Action wait = Button.Action.wait(Duration.of(1, SECONDS));
 
 		Button.Action move = moveAgents().on(terrain);
 		Button.Action reproduce = reproduceAgents(networkFactory, reproducer, mutator, agentsLimit, random).on(terrain);
