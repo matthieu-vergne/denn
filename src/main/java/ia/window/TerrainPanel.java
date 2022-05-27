@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BinaryOperator;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collector;
@@ -27,6 +28,7 @@ import ia.Measure;
 import ia.Measure.Feeder;
 import ia.agent.Agent;
 import ia.terrain.Position;
+import ia.terrain.Position.Bounds;
 import ia.terrain.Terrain;
 
 @SuppressWarnings("serial")
@@ -62,22 +64,28 @@ public class TerrainPanel extends JPanel {
 	}
 
 	public void repaint(Position position) {
-		Rectangle componentBounds = this.getBounds();
-		int componentWidth = componentBounds.width;
-		int componentHeight = componentBounds.height;
-		double cellWidth = (double) componentWidth / terrain.width();
-		double cellHeight = (double) componentHeight / terrain.height();
-
-		repaint(rectangleOverPosition(position, cellWidth, cellHeight));
+		repaint(rectangleFrom(paintable(cellAt(position, pixelToTerrain().reverse()))));
 	}
 
-	private static Rectangle rectangleOverPosition(Position position, double cellWidth, double cellHeight) {
-		// Prefer covering 1px too much (floor min & ceil max) than having holes
-		int x = (int) floor(position.x * cellWidth);
-		int y = (int) floor(position.y * cellHeight);
-		int width = (int) ceil(cellWidth);
-		int height = (int) ceil(cellHeight);
-		return new Rectangle(x, y, width, height);
+	private static Bounds paintable(Bounds cell) {
+		/**
+		 * If we paint a pixel at (x, y), we paint with a width and height of 1. Thus,
+		 * painting a bound from (x, y) to (x, y) means painting a square of size 1.
+		 * Since a bound from (x, y) to (x, y) has 0 width and height, we need to extend
+		 * it. Since the (x, y) is based on the minimum position of the bound, we extend
+		 * on the maximum position.
+		 */
+		return cell.extend(0, 1, 0, 1);
+	}
+
+	private static Bounds cellAt(Position position, PositionConverter terrainToPixel) {
+		Position topLeft = terrainToPixel.convert(position);
+		Position bottomRight = terrainToPixel.convert(position.move(1, 1)).move(-1, -1);
+		return topLeft.boundsTo(bottomRight);
+	}
+
+	private static Rectangle rectangleFrom(Bounds bounds) {
+		return new Rectangle(bounds.min.x(), bounds.min.y(), bounds.width(), bounds.height());
 	}
 
 	@Override
@@ -178,15 +186,15 @@ public class TerrainPanel extends JPanel {
 		TARGET(drawerFactory -> drawerFactory.targetDrawer(Color.BLACK, 5), 1),//
 		;
 
-		private final Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver;
+		private final Function<DrawerFactory, Consumer<Position>> resolver;
 		private final int radiusFix;
 
-		private PointerRenderer(Function<DrawerFactory, BiConsumer<Integer, Integer>> resolver, int radiusFix) {
+		private PointerRenderer(Function<DrawerFactory, Consumer<Position>> resolver, int radiusFix) {
 			this.resolver = resolver;
 			this.radiusFix = radiusFix;
 		}
 
-		BiConsumer<Integer, Integer> createDrawer(DrawerFactory drawerFactory) {
+		Consumer<Position> createDrawer(DrawerFactory drawerFactory) {
 			return resolver.apply(drawerFactory);
 		}
 
@@ -211,46 +219,37 @@ public class TerrainPanel extends JPanel {
 		drawer.draw(ctx);
 	}
 
-	record DrawContext(Graphics2D graphics, Terrain terrain, PositionConverter pixelToTerrain, int componentWidth,
-			int componentHeight, double cellWidth, double cellHeight) {
+	record DrawContext(Graphics2D graphics, Terrain terrain, Position.Bounds componentBounds) {
+
+		public PositionConverter pixelToTerrain() {
+			return new PositionConverter(componentBounds, terrain.bounds());
+		}
+
+		public PositionConverter terrainToPixel() {
+			return new PositionConverter(terrain.bounds(), componentBounds);
+		}
 
 		public static DrawContext create(Terrain terrain, JComponent component, Graphics graphics) {
 			Graphics2D graphics2D = (Graphics2D) graphics;
-			Rectangle componentBounds = component.getBounds();
 			// TODO Scale with panel bounds, but don't draw out of graphics
-			int componentWidth = componentBounds.width;
-			int componentHeight = componentBounds.height;
-			double cellWidth = (double) componentWidth / terrain.width();
-			double cellHeight = (double) componentHeight / terrain.height();
-
 			Position minPixel = Position.at(0, 0);
-			Position maxPixel = Position.at(componentWidth - 1, componentHeight - 1);
-			Position minPosition = terrain.minPosition();
-			Position maxPosition = terrain.maxPosition();
-			PositionConverter pixelToTerrain = new PositionConverter(//
-					minPixel.boundsTo(maxPixel), //
-					minPosition.boundsTo(maxPosition)//
-			);
-
-			return new DrawContext(//
-					graphics2D, terrain, pixelToTerrain, //
-					componentWidth, componentHeight, //
-					cellWidth, cellHeight//
-			);
+			Position maxPixel = Position.at(component.getWidth() - 1, component.getHeight() - 1);
+			return new DrawContext(graphics2D, terrain, minPixel.boundsTo(maxPixel));
 		}
 
 		public DrawContext onGraphics(Graphics2D graphics2D) {
-			return new DrawContext(graphics2D, terrain, pixelToTerrain, componentWidth, componentHeight, cellWidth,
-					cellHeight);
+			return new DrawContext(graphics2D, terrain, componentBounds);
 		}
 
 		public DrawContext atComponent() {
-			return onGraphics((Graphics2D) graphics.create(0, 0, componentWidth, componentWidth));
+			Bounds paintBounds = paintable(componentBounds);
+			return onGraphics((Graphics2D) graphics.create(0, 0, paintBounds.width(), paintBounds.height()));
 		}
 
 		public DrawContext atCell(Position position) {
-			Rectangle rect = rectangleOverPosition(position, cellWidth, cellHeight);
-			return onGraphics((Graphics2D) graphics.create(rect.x, rect.y, rect.width, rect.height));
+			Bounds paintBounds = paintable(cellAt(position, this.terrainToPixel()));
+			return onGraphics((Graphics2D) graphics.create(paintBounds.min.x(), paintBounds.min.y(),
+					paintBounds.width(), paintBounds.height()));
 		}
 	}
 
@@ -261,33 +260,42 @@ public class TerrainPanel extends JPanel {
 			this.ctx = ctx;
 		}
 
-		public BiConsumer<Integer, Integer> thinSquareDrawer(Color color) {
-			return (x, y) -> {
-				ctx.graphics().setColor(color);
-				ctx.graphics().drawRect(x, y, (int) ctx.cellWidth(), (int) ctx.cellHeight());
+		public Consumer<Position> thinSquareDrawer(Color color) {
+			return position -> {
+				// TODO Generalize the use of Drawer to all pointers to simplify
+				Drawer drawer = ctx -> {
+					Bounds cell = cellAt(position, ctx.terrainToPixel());
+					ctx.graphics().setColor(color);
+					ctx.graphics().drawRect(cell.min.x(), cell.min.y(), cell.width(), cell.height());
+				};
+				drawer.draw(ctx);
 			};
 		}
 
-		public BiConsumer<Integer, Integer> thickSquareDrawer(Color color, int borderSize) {
-			return (x, y) -> {
+		public Consumer<Position> thickSquareDrawer(Color color, int borderSize) {
+			return position -> {
+				Bounds cell = cellAt(position, ctx.terrainToPixel());
 				for (int i = 0; i < borderSize; i++) {
 					Color rectColor = new Color(color.getRed(), color.getGreen(), color.getBlue(),
 							255 * (borderSize - i) / borderSize);
 					ctx.graphics().setColor(rectColor);
-					ctx.graphics().drawRect(x - i, y - i, (int) ctx.cellWidth() + 2 * i,
-							(int) ctx.cellHeight() + 2 * i);
+					ctx.graphics().drawRect(cell.min.x() - i, cell.min.y() - i, cell.width() + 2 * i,
+							cell.height() + 2 * i);
 				}
 			};
 		}
 
-		public BiConsumer<Integer, Integer> targetDrawer(Color color, int extraRadius) {
-			double cellSize = max(ctx.cellWidth(), ctx.cellHeight());
-			int diameter = (int) round(hypot(cellSize, cellSize)) + 2 * extraRadius;
-			int midWidth = (int) round(ctx.cellWidth() / 2);
-			int midHeight = (int) round(ctx.cellHeight() / 2);
-			return (x, y) -> {
-				int centerX = x + midWidth;
-				int centerY = y + midHeight;
+		public Consumer<Position> targetDrawer(Color color, int extraRadius) {
+			return position -> {
+				PositionConverter terrainToPixel = ctx.terrainToPixel();
+				Bounds cell = cellAt(position, terrainToPixel);
+				double cellSize = max(cell.width(), cell.height());
+				int diameter = (int) round(hypot(cellSize, cellSize)) + 2 * extraRadius;
+				int midWidth = (int) round(cell.width() / 2);
+				int midHeight = (int) round(cell.height() / 2);
+				Position pixel = terrainToPixel.convert(position);
+				int centerX = pixel.x() + midWidth;
+				int centerY = pixel.y() + midHeight;
 				int minX = centerX - diameter / 2;
 				int maxX = minX + diameter;
 				int minY = centerY - diameter / 2;

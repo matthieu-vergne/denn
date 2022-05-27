@@ -1,24 +1,15 @@
 package ia.terrain;
 
 import static java.lang.Math.*;
-import static java.util.Objects.*;
 
 import java.awt.Rectangle;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-public class Position {
+public record Position(int x, int y) {
+
 	public static final Position ORIGIN = Position.at(0, 0);
-
-	public final int x;
-	public final int y;
-
-	private Position(int x, int y) {
-		this.x = x;
-		this.y = y;
-	}
 
 	public static Position at(int x, int y) {
 		return new Position(x, y);
@@ -27,23 +18,6 @@ public class Position {
 	@Override
 	public String toString() {
 		return String.format("(%d, %d)", x, y);
-	}
-
-	@Override
-	public boolean equals(Object obj) {
-		if (obj == this) {
-			return true;
-		} else if (obj instanceof Position) {
-			Position that = (Position) obj;
-			return Objects.equals(this.x, that.x) && Objects.equals(this.y, that.y);
-		} else {
-			return false;
-		}
-	}
-
-	@Override
-	public int hashCode() {
-		return hash(x, y);
 	}
 
 	public Position move(Move move) {
@@ -89,12 +63,24 @@ public class Position {
 			this.max = max;
 		}
 
+		public int width() {
+			return max.x - min.x;
+		}
+
+		public int height() {
+			return max.y - min.y;
+		}
+
 		public Bounds reduce(int radius) {
 			return reduce(radius, radius);
 		}
 
 		public Bounds reduce(int xRadius, int yRadius) {
-			return between(min.move(xRadius, yRadius), max.move(-xRadius, -yRadius));
+			return reduce(xRadius, xRadius, yRadius, yRadius);
+		}
+
+		public Bounds reduce(int xMin, int xMax, int yMin, int yMax) {
+			return between(min.move(xMin, yMin), max.move(-xMax, -yMax));
 		}
 
 		public Bounds extend(int radius) {
@@ -102,7 +88,11 @@ public class Position {
 		}
 
 		public Bounds extend(int xRadius, int yRadius) {
-			return reduce(-xRadius, -yRadius);
+			return extend(xRadius, xRadius, yRadius, yRadius);
+		}
+
+		public Bounds extend(int xMin, int xMax, int yMin, int yMax) {
+			return reduce(-xMin, -xMax, -yMin, -yMax);
 		}
 
 		public Stream<Position> allPositions() {
@@ -136,7 +126,7 @@ public class Position {
 		public static Bounds around(Position position, int radius) {
 			return around(position, radius, radius);
 		}
-		
+
 		public static Bounds around(Position position, int xRadius, int yRadius) {
 			return between(//
 					position.move(-xRadius, -yRadius), //

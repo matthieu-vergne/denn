@@ -230,15 +230,15 @@ public interface TerrainInteractor {
 
 				private static Projection project(Position p1, Position p2, Position position) {
 					// Compute the band vector
-					double vx = p2.x - p1.x;
-					double vy = p2.y - p1.y;
+					double vx = p2.x() - p1.x();
+					double vy = p2.y() - p1.y();
 					// compute the orthogonal unit vector (size of 1 pixel)
 					double vNorm = hypot(vx, vy);
 					double wx = -vy / vNorm;
 					double wy = vx / vNorm;
 					// Compute the agent vector
-					double ux = position.x - p1.x;
-					double uy = position.y - p1.y;
+					double ux = position.x() - p1.x();
+					double uy = position.y() - p1.y();
 					// Project the agent vector on the band vector
 					// In the band, it is between 0 and 1
 					double bandProjection = (ux * vx + uy * vy) / (vx * vx + vy * vy);
@@ -274,11 +274,11 @@ public interface TerrainInteractor {
 				}
 
 				public OnPosition fromXCenter() {
-					return fromX(terrain.centerPosition().x);
+					return fromX(terrain.centerPosition().x());
 				}
 
 				public OnPosition fromYCenter() {
-					return fromY(terrain.centerPosition().y);
+					return fromY(terrain.centerPosition().y());
 				}
 
 				public OnPosition fromBorders() {

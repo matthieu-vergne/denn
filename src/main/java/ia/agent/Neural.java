@@ -66,7 +66,7 @@ public interface Neural<T> {
 				public T moveToward(Position position) {
 					return builderGenerator.get()//
 							// targetX
-							.createNeuronWithFixedSignal(position.x)//
+							.createNeuronWithFixedSignal(position.x())//
 							// diffX
 							.createNeuronWithWeightedSumFunction(-1.0)//
 							.moveTo(3)//
@@ -91,7 +91,7 @@ public interface Neural<T> {
 							.setDXAt(8)//
 
 							// targetY
-							.createNeuronWithFixedSignal(position.y)//
+							.createNeuronWithFixedSignal(position.y())//
 							// diffY
 							.createNeuronWithWeightedSumFunction(-1.0)//
 							.moveTo(10)//

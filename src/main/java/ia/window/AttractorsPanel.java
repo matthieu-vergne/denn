@@ -66,7 +66,16 @@ public class AttractorsPanel extends TerrainPanel {
 		progressListeners.add(listener);
 	}
 
-	public static AttractorsPanel on(Terrain terrain, NeuralNetwork.Factory networkFactory) {
+	record Settings(//
+			Supplier<Integer> maxStartPositions, //
+			Supplier<Integer> maxRunsPerStartPosition, //
+			Supplier<Integer> maxIterationsPerRun, //
+			Supplier<Integer> runAutoStopThreshold, //
+			Supplier<ColorFocus> colorFocus//
+	) {
+	}
+
+	public static AttractorsPanel on(Terrain terrain, NeuralNetwork.Factory networkFactory, Settings settings) {
 		class Context {
 			AttractorsPanel attractorsPanel;
 			Function<Position, Color> attractorColorizer = position -> {
@@ -80,10 +89,9 @@ public class AttractorsPanel extends TerrainPanel {
 		Drawer backgroundDrawer = filler(Color.WHITE);
 		Supplier<Drawer> drawerSupplier = () -> dCtx -> {
 			Position.Bounds componentClipBounds = Position.Bounds.from(dCtx.graphics().getClipBounds());
-			Position.Bounds terrainClipBounds = ctx.attractorsPanel.pixelToTerrain().convert(componentClipBounds);
+			Position.Bounds terrainClipBounds = dCtx.pixelToTerrain().convert(componentClipBounds);
 			Stream<Position> terrainClipPositions = terrainClipBounds.allPositions();
 			// TODO Redraw all on scale update (min/max)
-			// TODO Fix graphics artifacts because of rounding
 			// TODO Optimize large surface drawing
 			Drawer requestedDrawer = Drawer.forEachPosition(terrainClipPositions, position -> {
 				if (ctx.hasAttractor.test(position)) {
@@ -97,12 +105,11 @@ public class AttractorsPanel extends TerrainPanel {
 		};
 		List<Consumer<Double>> progressListeners = new LinkedList<>();
 		Consumer<Program> tasker = program -> {
-			// TODO Parameterize on the interface
-			int maxStartPositions = terrain.width() * terrain.height();
-			int maxRunsPerStartPosition = 1;
-			int maxIterationsPerRun = terrain.width() + terrain.height();
-			int runAutoStopThreshold = 10;
-			ColorFocus colorFocus = ColorFocus.MIN_MAX;
+			int maxStartPositions = settings.maxStartPositions.get();
+			int maxRunsPerStartPosition = settings.maxRunsPerStartPosition.get();
+			int maxIterationsPerRun = settings.maxIterationsPerRun.get();
+			int runAutoStopThreshold = settings.runAutoStopThreshold.get();
+			ColorFocus colorFocus = settings.colorFocus.get();
 
 			JobsContext context = createMapContext(terrain, Color.RED, colorFocus);
 
@@ -188,10 +195,10 @@ public class AttractorsPanel extends TerrainPanel {
 					throw new NoSuchElementException("");
 				}
 				Position position = next;
-				if (position.x < maxPosition.x) {
+				if (position.x() < maxPosition.x()) {
 					next = position.move(1, 0);
-				} else if (position.y < maxPosition.y) {
-					next = position.move(-position.x, 1);
+				} else if (position.y() < maxPosition.y()) {
+					next = position.move(-position.x(), 1);
 				} else {
 					next = null;
 				}

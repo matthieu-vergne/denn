@@ -46,7 +46,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -70,7 +69,9 @@ import ia.agent.NeuralNetwork;
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Program;
 import ia.terrain.Position;
+import ia.terrain.Position.Bounds;
 import ia.terrain.Terrain;
+import ia.window.SettingsPanel.Settings;
 import ia.window.TerrainPanel.DrawContext;
 import ia.window.TerrainPanel.Drawer;
 import ia.window.TerrainPanel.DrawerFactory;
@@ -86,6 +87,39 @@ public class Window {
 
 	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<List<Button>> buttons,
 			NeuralNetwork.Factory networkFactory) {
+		RepaintManager.setCurrentManager(createRepaintManager());
+
+		SettingsPanel settingsPanel = new SettingsPanel(terrain);
+		Settings settings = settingsPanel.settings();
+
+		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons, networkFactory,
+				settings.forAttractors());
+
+		JTabbedPane tabs = new JTabbedPane();
+		// TODO Add agent tab
+		tabs.add("Simulation", simulationPanel);
+		tabs.add("Settings", settingsPanel);
+
+		this.frame = new JFrame("AI");
+		frame.setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+		frame.addWindowListener(new WindowAdapter() {
+			@Override
+			public void windowClosed(WindowEvent e) {
+				isWindowClosed = true;
+				for (Runnable listener : closeListeners) {
+					listener.run();
+				}
+				frame.removeWindowListener(this);
+			}
+		});
+		Container contentPane = frame.getContentPane();
+		contentPane.setLayout(new GridLayout());
+		contentPane.add(tabs);
+		frame.pack();
+		frame.setVisible(true);
+	}
+
+	private RepaintManager createRepaintManager() {
 		WeakHashMap<TerrainPanel, List<Rectangle>> dirtyRegions = new WeakHashMap<>();
 		AtomicReference<Runnable> availablePainter = new AtomicReference<Runnable>();
 		Runnable painter = new Runnable() {
@@ -104,12 +138,10 @@ public class Window {
 					});
 					rectangles.clear();
 				});
-//				invokeLater(this);
 			}
 		};
-		// invokeLater(painter);
 		availablePainter.set(painter);
-		RepaintManager.setCurrentManager(new RepaintManager() {
+		RepaintManager repaintManager = new RepaintManager() {
 
 			@Override
 			public void addDirtyRegion(JComponent c, int x, int y, int w, int h) {
@@ -121,9 +153,9 @@ public class Window {
 					} else {
 						rectangles.add(rectangles.remove(0).union(rectangle));
 					}
-					Runnable updater = availablePainter.getAndSet(null);
-					if (updater != null) {
-						invokeLater(updater);
+					Runnable painter = availablePainter.getAndSet(null);
+					if (painter != null) {
+						invokeLater(painter);
 					}
 				} else {
 					super.addDirtyRegion(c, x, y, w, h);
@@ -157,34 +189,13 @@ public class Window {
 				}
 			}
 
-		});
-
-		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons, networkFactory);
-
-		JTabbedPane tabs = new JTabbedPane();
-		tabs.add("Simulation", simulationPanel);
-
-		this.frame = new JFrame("AI");
-		frame.setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-		frame.addWindowListener(new WindowAdapter() {
-			@Override
-			public void windowClosed(WindowEvent e) {
-				isWindowClosed = true;
-				for (Runnable listener : closeListeners) {
-					listener.run();
-				}
-				frame.removeWindowListener(this);
-			}
-		});
-		Container contentPane = frame.getContentPane();
-		contentPane.setLayout(new GridLayout());
-		contentPane.add(tabs);
-		frame.pack();
-		frame.setVisible(true);
+		};
+		return repaintManager;
 	}
 
 	private JPanel createSimulationPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory) {
+			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory,
+			AttractorsPanel.Settings attractorsSettings) {
 		MouseOnTerrain mouseOnTerrain = new MouseOnTerrain();
 
 		TerrainPanel terrainPanel = createTerrainPanel(terrain, cellSize, agentColorizer, mouseOnTerrain);
@@ -198,8 +209,7 @@ public class Window {
 		MouseOnTerrain.TerrainPanelListener listener = mouseOnTerrain.terrainPanelListener(terrain, terrainPanel);
 		terrainPanel.addMouseListener(listener);
 		terrainPanel.addMouseMotionListener(listener);
-
-		JComponent agentPanel = createAgentInfoPanel(mouseOnTerrain, terrain, networkFactory);
+		JComponent agentPanel = createAgentInfoPanel(mouseOnTerrain, terrain, networkFactory, attractorsSettings);
 		JScrollPane agentInfoPanel = new JScrollPane(agentPanel);
 		agentInfoPanel.setBorder(new TitledBorder("Agent Info"));
 
@@ -253,22 +263,20 @@ public class Window {
 
 		TerrainPanel terrainPanel = new TerrainPanel(terrain, () -> {
 			Drawer backgroundDrawer = filler(Color.WHITE);
+
 			Drawer filterDrawer = filters.stream()//
 					.map(filter -> Drawer.forEachPosition(terrain.allPositions(), filter.andThen(Drawer::filler)))//
 					.collect(toCompositeDrawer());
+
 			Function<Agent, Color> colorize = agentColorizer::colorize;
 			Drawer agentDrawer = Drawer.forEachAgent(terrain.agents(), colorize.andThen(Drawer::filler));
-			// TODO Simplify pointers Drawer
-			Function<Pointer, Drawer> drawerFactory = pointer -> new Drawer() {
 
-				@Override
-				public void draw(DrawContext ctx) {
-					int x = (int) (pointer.position().x * ctx.cellWidth());
-					int y = (int) (pointer.position().y * ctx.cellHeight());
-					pointer.renderer().createDrawer(new DrawerFactory(ctx)).accept(x, y);
-				}
+			// TODO Simplify pointers Drawer
+			Function<Pointer, Drawer> drawerFactory = pointer -> ctx -> {
+				pointer.renderer().createDrawer(new DrawerFactory(ctx)).accept(pointer.position());
 			};
 			Drawer pointersDrawer = pointersSupplier.get().map(drawerFactory).collect(toCompositeDrawer());
+
 			return backgroundDrawer.then(filterDrawer).then(agentDrawer).then(pointersDrawer);
 		});
 		mouseOnTerrain.listenMove(position -> {
@@ -285,7 +293,9 @@ public class Window {
 			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = null;
 
-			terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, previousPosition, rendererOf[mouse]));
+			Bounds drawnPositions = retrieveDrawnPositions(terrain, terrainPanel, previousPosition, rendererOf[mouse]);
+			System.out.println(drawnPositions);
+			terrainPanel.repaint(drawnPositions);
 		});
 		mouseOnTerrain.listenClick(position -> {
 			Position previousPosition = positionOf[selection];
@@ -308,23 +318,28 @@ public class Window {
 	// TODO Simplify
 	private Position.Bounds retrieveDrawnPositions(Terrain terrain, TerrainPanel terrainPanel, Position position,
 			PointerRenderer pointerRenderer) {
-		PositionConverter pixelToTerrain = terrainPanel.pixelToTerrain();
-		PositionConverter terrainToPixel = pixelToTerrain.reverse();
-		Position cellRef = terrainToPixel.convert(Position.at(1, 1));
 		GraphicsCatcher graphics = new GraphicsCatcher();
-		DrawContext dc = new DrawContext(graphics, terrain, pixelToTerrain, terrainPanel.getWidth(),
-				terrainPanel.getHeight(), cellRef.x, cellRef.y);
+		Position minPixel = Position.ORIGIN;
+		Position maxPixel = minPixel.move(terrainPanel.getWidth() - 1, terrainPanel.getHeight() - 1);
+		Bounds componentBounds = minPixel.boundsTo(maxPixel);
+		DrawContext dc = new DrawContext(graphics, terrain, componentBounds);
 		DrawerFactory df = new DrawerFactory(dc);
-		BiConsumer<Integer, Integer> drawer = pointerRenderer.createDrawer(df);
-		Position cell = terrainToPixel.convert(position);
-		drawer.accept(cell.x, cell.y);
+		Consumer<Position> drawer = pointerRenderer.createDrawer(df);
+		drawer.accept(position);
 		Position.Bounds drawnBounds = graphics.catchedBounds();
-		return pixelToTerrain.convert(drawnBounds).extend(pointerRenderer.extraStroke());
+		Bounds drawn = dc.pixelToTerrain().convert(drawnBounds//
+				.reduce(0, 1, 0, 1)//
+				)//
+//				.extend(pointerRenderer.extraStroke())//
+				;
+		// FIXME Should be 1 position bound on thin square
+		System.out.println(drawn);
+		return drawn;
 	}
 
 	// TODO Simplify
 	private JPanel createAgentInfoPanel(MouseOnTerrain mouseOnTerrain, Terrain terrain,
-			NeuralNetwork.Factory networkFactory) {
+			NeuralNetwork.Factory networkFactory, AttractorsPanel.Settings attractorsSettings) {
 		JLabel moveLabel = new JLabel(" ");
 		mouseOnTerrain.listenMove(position -> moveLabel.setText(position.toString()));
 		mouseOnTerrain.listenExit(() -> moveLabel.setText(" "));
@@ -408,7 +423,8 @@ public class Window {
 						stop[0].run();
 					}
 					Terrain attractors = Terrain.createWithSize(terrain.width(), terrain.height());
-					AttractorsPanel attractorsPanel = AttractorsPanel.on(attractors, networkFactory);
+					AttractorsPanel attractorsPanel = AttractorsPanel.on(attractors, networkFactory,
+							attractorsSettings);
 					attractorsPanel.listenComputingProgress(progressUpdater);
 					attractorsInfoPanel.remove(1);
 					attractorsInfoPanel.add(attractorsPanel, attractorsConstraint);

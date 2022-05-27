@@ -197,8 +197,8 @@ public interface NeuralNetwork {
 
 				@Override
 				public void setInputs(Position position) {
-					neurons.set(0, Neuron.onFixedSignal(position.x));
-					neurons.set(1, Neuron.onFixedSignal(position.y));
+					neurons.set(0, Neuron.onFixedSignal(position.x()));
+					neurons.set(1, Neuron.onFixedSignal(position.y()));
 				}
 
 				@Override
@@ -329,7 +329,7 @@ public interface NeuralNetwork {
 		public NeuralNetwork moveToward(Position position) {
 			return new NeuralNetwork.Builder(random::nextDouble)//
 					// targetX
-					.createNeuronWith(fixedSignal(position.x))//
+					.createNeuronWith(fixedSignal(position.x()))//
 					// diffX
 					.createNeuronWith(weightedSumFunction(-1))//
 					.moveTo(lastNeuron())//
@@ -354,7 +354,7 @@ public interface NeuralNetwork {
 					.setDXAt(lastNeuron())//
 
 					// targetY
-					.createNeuronWith(fixedSignal(position.y))//
+					.createNeuronWith(fixedSignal(position.y()))//
 					// diffY
 					.createNeuronWith(weightedSumFunction(-1))//
 					.moveTo(lastNeuron())//

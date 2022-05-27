@@ -155,8 +155,8 @@ public class Program {
 
 		public Program positionMover(Position position) {
 			return createPerceptrons(//
-					inputs -> inputs.weighted(-1, 0, position.x, 0, 0), //
-					inputs -> inputs.weighted(0, -1, position.y, 0, 0)//
+					inputs -> inputs.weighted(-1, 0, position.x(), 0, 0), //
+					inputs -> inputs.weighted(0, -1, position.y(), 0, 0)//
 			);
 		}
 

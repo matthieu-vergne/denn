@@ -53,10 +53,9 @@ public class MouseOnTerrain {
 	}
 
 	public TerrainPanelListener terrainPanelListener(Terrain terrain, TerrainPanel terrainPanel) {
-		Function<Point, Position> positioner = point -> Position.at(//
-				point.x * terrain.width() / terrainPanel.getWidth(), //
-				point.y * terrain.height() / terrainPanel.getHeight()//
-		);
+		Function<Point, Position> positioner = point -> {
+			return terrainPanel.pixelToTerrain().convert(Position.at(point.x, point.y));
+		};
 		return new TerrainPanelListener() {
 
 			@Override
