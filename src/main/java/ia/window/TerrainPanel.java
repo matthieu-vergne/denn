@@ -14,8 +14,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collector;
@@ -64,28 +64,7 @@ public class TerrainPanel extends JPanel {
 	}
 
 	public void repaint(Position position) {
-		repaint(rectangleFrom(paintable(cellAt(position, pixelToTerrain().reverse()))));
-	}
-
-	private static Bounds paintable(Bounds cell) {
-		/**
-		 * If we paint a pixel at (x, y), we paint with a width and height of 1. Thus,
-		 * painting a bound from (x, y) to (x, y) means painting a square of size 1.
-		 * Since a bound from (x, y) to (x, y) has 0 width and height, we need to extend
-		 * it. Since the (x, y) is based on the minimum position of the bound, we extend
-		 * on the maximum position.
-		 */
-		return cell.extend(0, 1, 0, 1);
-	}
-
-	private static Bounds cellAt(Position position, PositionConverter terrainToPixel) {
-		Position topLeft = terrainToPixel.convert(position);
-		Position bottomRight = terrainToPixel.convert(position.move(1, 1)).move(-1, -1);
-		return topLeft.boundsTo(bottomRight);
-	}
-
-	private static Rectangle rectangleFrom(Bounds bounds) {
-		return new Rectangle(bounds.min.x(), bounds.min.y(), bounds.width(), bounds.height());
+		repaint(position.cellBounds(pixelToTerrain().reverse()).paintable().rectangle());
 	}
 
 	@Override
@@ -181,21 +160,21 @@ public class TerrainPanel extends JPanel {
 	}
 
 	public static enum PointerRenderer {
-		THIN_SQUARE(drawerFactory -> drawerFactory.thinSquareDrawer(Color.BLACK), 0), //
-		THICK_SQUARE(drawerFactory -> drawerFactory.thickSquareDrawer(Color.BLACK, 10), 0), //
-		TARGET(drawerFactory -> drawerFactory.targetDrawer(Color.BLACK, 5), 1),//
+		THIN_SQUARE((drawerFactory, position) -> drawerFactory.thinSquareDrawer(Color.BLACK, position), 0), //
+		THICK_SQUARE((drawerFactory, position) -> drawerFactory.thickSquareDrawer(Color.BLACK, 10, position), 0), //
+		TARGET((drawerFactory, position) -> drawerFactory.targetDrawer(Color.BLACK, 5, position), 1),//
 		;
 
-		private final Function<DrawerFactory, Consumer<Position>> resolver;
+		private final BiFunction<DrawerFactory, Position, Drawer> resolver2;
 		private final int radiusFix;
 
-		private PointerRenderer(Function<DrawerFactory, Consumer<Position>> resolver, int radiusFix) {
-			this.resolver = resolver;
+		private PointerRenderer(BiFunction<DrawerFactory, Position, Drawer> resolver2, int radiusFix) {
+			this.resolver2 = resolver2;
 			this.radiusFix = radiusFix;
 		}
 
-		Consumer<Position> createDrawer(DrawerFactory drawerFactory) {
-			return resolver.apply(drawerFactory);
+		Drawer createDrawer(DrawerFactory drawerFactory, Position position) {
+			return resolver2.apply(drawerFactory, position);
 		}
 
 		/**
@@ -242,39 +221,33 @@ public class TerrainPanel extends JPanel {
 		}
 
 		public DrawContext atComponent() {
-			Bounds paintBounds = paintable(componentBounds);
+			Bounds paintBounds = componentBounds.paintable();
 			return onGraphics((Graphics2D) graphics.create(0, 0, paintBounds.width(), paintBounds.height()));
 		}
 
 		public DrawContext atCell(Position position) {
-			Bounds paintBounds = paintable(cellAt(position, this.terrainToPixel()));
+			Bounds paintBounds = position.cellBounds(this.terrainToPixel()).paintable();
 			return onGraphics((Graphics2D) graphics.create(paintBounds.min.x(), paintBounds.min.y(),
 					paintBounds.width(), paintBounds.height()));
 		}
 	}
 
 	static class DrawerFactory {
-		private final DrawContext ctx;
 
-		public DrawerFactory(DrawContext ctx) {
-			this.ctx = ctx;
+		public DrawerFactory() {
 		}
 
-		public Consumer<Position> thinSquareDrawer(Color color) {
-			return position -> {
-				// TODO Generalize the use of Drawer to all pointers to simplify
-				Drawer drawer = ctx -> {
-					Bounds cell = cellAt(position, ctx.terrainToPixel());
-					ctx.graphics().setColor(color);
-					ctx.graphics().drawRect(cell.min.x(), cell.min.y(), cell.width(), cell.height());
-				};
-				drawer.draw(ctx);
+		public Drawer thinSquareDrawer(Color color, Position position) {
+			return ctx -> {
+				Position.Bounds cell = position.cellBounds(ctx.terrainToPixel());
+				ctx.graphics().setColor(color);
+				ctx.graphics().drawRect(cell.min.x(), cell.min.y(), cell.width(), cell.height());
 			};
 		}
 
-		public Consumer<Position> thickSquareDrawer(Color color, int borderSize) {
-			return position -> {
-				Bounds cell = cellAt(position, ctx.terrainToPixel());
+		private Drawer thickSquareDrawer(Color color, int borderSize, Position position) {
+			return ctx -> {
+				Position.Bounds cell = position.cellBounds(ctx.terrainToPixel());
 				for (int i = 0; i < borderSize; i++) {
 					Color rectColor = new Color(color.getRed(), color.getGreen(), color.getBlue(),
 							255 * (borderSize - i) / borderSize);
@@ -285,10 +258,10 @@ public class TerrainPanel extends JPanel {
 			};
 		}
 
-		public Consumer<Position> targetDrawer(Color color, int extraRadius) {
-			return position -> {
+		private Drawer targetDrawer(Color color, int extraRadius, Position position) {
+			return ctx -> {
 				PositionConverter terrainToPixel = ctx.terrainToPixel();
-				Bounds cell = cellAt(position, terrainToPixel);
+				Bounds cell = position.cellBounds(terrainToPixel);
 				double cellSize = max(cell.width(), cell.height());
 				int diameter = (int) round(hypot(cellSize, cellSize)) + 2 * extraRadius;
 				int midWidth = (int) round(cell.width() / 2);

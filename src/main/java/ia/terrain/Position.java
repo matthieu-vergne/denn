@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import ia.window.PositionConverter;
+
 public record Position(int x, int y) {
 
 	public static final Position ORIGIN = Position.at(0, 0);
@@ -46,6 +48,12 @@ public record Position(int x, int y) {
 	public Move to(Position otherPosition) {
 		Position that = otherPosition;// Just renaming for readability
 		return Move.create(that.x - this.x, that.y - this.y);
+	}
+
+	public Bounds cellBounds(PositionConverter terrainToPixel) {
+		Position topLeft = terrainToPixel.convert(this);
+		Position bottomRight = terrainToPixel.convert(this.move(1, 1)).move(-1, -1);
+		return topLeft.boundsTo(bottomRight);
 	}
 
 	public static class Bounds {
@@ -103,6 +111,21 @@ public record Position(int x, int y) {
 
 		private Stream<Integer> range(int minY, int maxY) {
 			return IntStream.rangeClosed(minY, maxY).mapToObj(i -> i);
+		}
+
+		public Rectangle rectangle() {
+			return new Rectangle(min.x(), min.y(), width(), height());
+		}
+
+		public Bounds paintable() {
+			/**
+			 * If we paint a pixel at (x, y), we paint with a width and height of 1. Thus,
+			 * painting a bound from (x, y) to (x, y) means painting a square of size 1.
+			 * Since a bound from (x, y) to (x, y) has 0 width and height, we need to extend
+			 * it. Since the (x, y) is based on the minimum position of the bound, we extend
+			 * on the maximum position.
+			 */
+			return this.extend(0, 1, 0, 1);
 		}
 
 		@Override

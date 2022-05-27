@@ -82,6 +82,7 @@ public class Window {
 
 	private final JFrame frame;
 	private List<Function<Position, Color>> filters = new LinkedList<>();
+	// FIXME Iterations should stop on close
 	private boolean isWindowClosed = false;
 	private final List<Runnable> closeListeners = new LinkedList<>();
 
@@ -273,7 +274,7 @@ public class Window {
 
 			// TODO Simplify pointers Drawer
 			Function<Pointer, Drawer> drawerFactory = pointer -> ctx -> {
-				pointer.renderer().createDrawer(new DrawerFactory(ctx)).accept(pointer.position());
+				pointer.renderer().createDrawer(new DrawerFactory(), pointer.position()).draw(ctx);
 			};
 			Drawer pointersDrawer = pointersSupplier.get().map(drawerFactory).collect(toCompositeDrawer());
 
@@ -293,9 +294,7 @@ public class Window {
 			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = null;
 
-			Bounds drawnPositions = retrieveDrawnPositions(terrain, terrainPanel, previousPosition, rendererOf[mouse]);
-			System.out.println(drawnPositions);
-			terrainPanel.repaint(drawnPositions);
+			terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, previousPosition, rendererOf[mouse]));
 		});
 		mouseOnTerrain.listenClick(position -> {
 			Position previousPosition = positionOf[selection];
@@ -318,23 +317,18 @@ public class Window {
 	// TODO Simplify
 	private Position.Bounds retrieveDrawnPositions(Terrain terrain, TerrainPanel terrainPanel, Position position,
 			PointerRenderer pointerRenderer) {
-		GraphicsCatcher graphics = new GraphicsCatcher();
 		Position minPixel = Position.ORIGIN;
-		Position maxPixel = minPixel.move(terrainPanel.getWidth() - 1, terrainPanel.getHeight() - 1);
+		Position maxPixel = Position.at(terrainPanel.getWidth() - 1, terrainPanel.getHeight() - 1);
 		Bounds componentBounds = minPixel.boundsTo(maxPixel);
-		DrawContext dc = new DrawContext(graphics, terrain, componentBounds);
-		DrawerFactory df = new DrawerFactory(dc);
-		Consumer<Position> drawer = pointerRenderer.createDrawer(df);
-		drawer.accept(position);
+
+		GraphicsCatcher graphics = new GraphicsCatcher();
+		DrawContext ctx = new DrawContext(graphics, terrain, componentBounds);
+		pointerRenderer.createDrawer(new DrawerFactory(), position).draw(ctx);
+
 		Position.Bounds drawnBounds = graphics.catchedBounds();
-		Bounds drawn = dc.pixelToTerrain().convert(drawnBounds//
-				.reduce(0, 1, 0, 1)//
-				)//
-//				.extend(pointerRenderer.extraStroke())//
-				;
+		drawnBounds = drawnBounds.extend(pointerRenderer.extraStroke());// TODO Catch stroke automatically
 		// FIXME Should be 1 position bound on thin square
-		System.out.println(drawn);
-		return drawn;
+		return ctx.pixelToTerrain().convert(drawnBounds);
 	}
 
 	// TODO Simplify
