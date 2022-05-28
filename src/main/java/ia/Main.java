@@ -103,6 +103,7 @@ public class Main {
 			int remaining = terrain.agentsCount();
 			int percent = 100 * remaining / survivalTarget;
 			System.out.println("Survival success " + percent + "%");
+			new Exception().printStackTrace();
 		};
 
 		Button.Action wait = Button.Action.wait(Duration.of(1, SECONDS));

@@ -88,13 +88,15 @@ public class Window {
 
 	private Window(Terrain terrain, int cellSize, AgentColorizer agentColorizer, List<List<Button>> buttons,
 			NeuralNetwork.Factory networkFactory) {
-		RepaintManager.setCurrentManager(createRepaintManager());
+		TaskFactory taskFactory = new TaskFactory(() -> isWindowClosed);
+
+		RepaintManager.setCurrentManager(createRepaintManager(taskFactory));
 
 		SettingsPanel settingsPanel = new SettingsPanel(terrain);
 		Settings settings = settingsPanel.settings();
 
 		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons, networkFactory,
-				settings.forAttractors());
+				settings.forAttractors(), taskFactory);
 
 		JTabbedPane tabs = new JTabbedPane();
 		// TODO Add agent tab
@@ -120,28 +122,22 @@ public class Window {
 		frame.setVisible(true);
 	}
 
-	private RepaintManager createRepaintManager() {
+	private RepaintManager createRepaintManager(TaskFactory taskFactory) {
 		WeakHashMap<TerrainPanel, List<Rectangle>> dirtyRegions = new WeakHashMap<>();
 		AtomicReference<Runnable> availablePainter = new AtomicReference<Runnable>();
-		Runnable painter = new Runnable() {
-
-			@Override
-			public void run() {
-				if (isWindowClosed) {
-					return;
-				}
-				availablePainter.set(this);
-				dirtyRegions.entrySet().forEach(entry -> {
-					TerrainPanel terrainPanel = entry.getKey();
-					List<Rectangle> rectangles = dirtyRegions.get(terrainPanel);
-					rectangles.forEach(rectangle -> {
-						terrainPanel.paintImmediately(rectangle);
-					});
-					rectangles.clear();
+		Runnable[] painter = { null };
+		painter[0] = taskFactory.stopIfWindowClosed(() -> {
+			availablePainter.set(painter[0]);
+			dirtyRegions.entrySet().forEach(entry -> {
+				TerrainPanel terrainPanel = entry.getKey();
+				List<Rectangle> rectangles = dirtyRegions.get(terrainPanel);
+				rectangles.forEach(rectangle -> {
+					terrainPanel.paintImmediately(rectangle);
 				});
-			}
-		};
-		availablePainter.set(painter);
+				rectangles.clear();
+			});
+		});
+		availablePainter.set(painter[0]);
 		RepaintManager repaintManager = new RepaintManager() {
 
 			@Override
@@ -196,7 +192,7 @@ public class Window {
 
 	private JPanel createSimulationPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
 			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory,
-			AttractorsPanel.Settings attractorsSettings) {
+			AttractorsPanel.Settings attractorsSettings, TaskFactory taskFactory) {
 		MouseOnTerrain mouseOnTerrain = new MouseOnTerrain();
 
 		TerrainPanel terrainPanel = createTerrainPanel(terrain, cellSize, agentColorizer, mouseOnTerrain);
@@ -204,7 +200,7 @@ public class Window {
 		JPanel[] buttonsPanel = { null };
 		Consumer<Boolean> buttonsEnabler = enable -> Stream.of(buttonsPanel[0].getComponents())
 				.forEach(component -> component.setEnabled(enable));
-		buttonsPanel[0] = createButtonsPanel(withRepaint(buttons, terrainPanel, buttonsEnabler));
+		buttonsPanel[0] = createButtonsPanel(withRepaint(buttons, terrainPanel, buttonsEnabler, taskFactory));
 		buttonsPanel[0].setBorder(new TitledBorder("Actions"));
 
 		MouseOnTerrain.TerrainPanelListener listener = mouseOnTerrain.terrainPanelListener(terrain, terrainPanel);
@@ -482,20 +478,21 @@ public class Window {
 	}
 
 	private List<List<Button>> withRepaint(List<List<Button>> buttons, TerrainPanel terrainPanel,
-			Consumer<Boolean> buttonsEnabler) {
-		return buttons.stream()
-				.map(row -> row.stream().map(toButtonWithRepaint(terrainPanel, buttonsEnabler)).collect(toList()))
-				.collect(toList());
+			Consumer<Boolean> buttonsEnabler, TaskFactory taskFactory) {
+		return buttons.stream().map(row -> {
+			return row.stream().map(toButtonWithRepaint(terrainPanel, buttonsEnabler, taskFactory)).collect(toList());
+		}).collect(toList());
 	}
 
-	private Function<Button, Button> toButtonWithRepaint(TerrainPanel terrainPanel, Consumer<Boolean> buttonsEnabler) {
+	private Function<Button, Button> toButtonWithRepaint(TerrainPanel terrainPanel, Consumer<Boolean> buttonsEnabler,
+			TaskFactory taskFactory) {
 		return button -> {
 			Button.Action action = button.action;
 			if (action instanceof Button.CompositeAction comp) {
 				return Button.create(button.title, () -> {
 					buttonsEnabler.accept(false);
-					invokeLater(stopIfWindowClosed(new Runnable() {
-						Iterator<Button.Action> iterator = comp.steps().iterator();
+					invokeLater(taskFactory.stopIfWindowClosed(new Runnable() {
+						Iterator<? extends Button.Action> iterator = comp.steps().iterator();
 
 						@Override
 						public void run() {
@@ -518,13 +515,21 @@ public class Window {
 		};
 	}
 
-	private Runnable stopIfWindowClosed(Runnable runnable) {
-		return () -> {
-			if (isWindowClosed) {
-				return;
-			}
-			runnable.run();
-		};
+	public static class TaskFactory {
+		private final Supplier<Boolean> isWindowClosed;
+
+		public TaskFactory(Supplier<Boolean> isWindowClosed) {
+			this.isWindowClosed = isWindowClosed;
+		}
+
+		private Runnable stopIfWindowClosed(Runnable runnable) {
+			return () -> {
+				if (isWindowClosed.get()) {
+					return;
+				}
+				runnable.run();
+			};
+		}
 	}
 
 	private JPanel createButtonsPanel(List<List<Button>> buttons) {
