@@ -1,5 +1,6 @@
 package ia.window;
 
+import static ia.window.TerrainPanel.DrawerFactory.*;
 import static java.lang.Math.*;
 
 import java.awt.BasicStroke;
@@ -14,7 +15,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -160,21 +160,21 @@ public class TerrainPanel extends JPanel {
 	}
 
 	public static enum PointerRenderer {
-		THIN_SQUARE((drawerFactory, position) -> drawerFactory.thinSquareDrawer(Color.BLACK, position), 0), //
-		THICK_SQUARE((drawerFactory, position) -> drawerFactory.thickSquareDrawer(Color.BLACK, 10, position), 0), //
-		TARGET((drawerFactory, position) -> drawerFactory.targetDrawer(Color.BLACK, 5, position), 1),//
+		THIN_SQUARE(position -> thinSquareDrawer(Color.BLACK, position), 0), //
+		THICK_SQUARE(position -> thickSquareDrawer(Color.BLACK, 10, position), 0), //
+		TARGET(position -> targetDrawer(Color.BLACK, 5, position), 1),//
 		;
 
-		private final BiFunction<DrawerFactory, Position, Drawer> resolver2;
+		private final Function<Position, Drawer> resolver;
 		private final int radiusFix;
 
-		private PointerRenderer(BiFunction<DrawerFactory, Position, Drawer> resolver2, int radiusFix) {
-			this.resolver2 = resolver2;
+		private PointerRenderer(Function<Position, Drawer> resolver, int radiusFix) {
+			this.resolver = resolver;
 			this.radiusFix = radiusFix;
 		}
 
-		Drawer createDrawer(DrawerFactory drawerFactory, Position position) {
-			return resolver2.apply(drawerFactory, position);
+		Drawer createDrawer(Position position) {
+			return resolver.apply(position);
 		}
 
 		/**
@@ -192,6 +192,10 @@ public class TerrainPanel extends JPanel {
 	}
 
 	public static record Pointer(Position position, PointerRenderer renderer) {
+
+		public Drawer createDrawer() {
+			return renderer().createDrawer(position());
+		}
 	}
 
 	private void draw(DrawContext ctx, Drawer drawer) {
@@ -210,7 +214,6 @@ public class TerrainPanel extends JPanel {
 
 		public static DrawContext create(Terrain terrain, JComponent component, Graphics graphics) {
 			Graphics2D graphics2D = (Graphics2D) graphics;
-			// TODO Scale with panel bounds, but don't draw out of graphics
 			Position minPixel = Position.at(0, 0);
 			Position maxPixel = Position.at(component.getWidth() - 1, component.getHeight() - 1);
 			return new DrawContext(graphics2D, terrain, minPixel.boundsTo(maxPixel));
@@ -234,10 +237,7 @@ public class TerrainPanel extends JPanel {
 
 	static class DrawerFactory {
 
-		public DrawerFactory() {
-		}
-
-		public Drawer thinSquareDrawer(Color color, Position position) {
+		public static Drawer thinSquareDrawer(Color color, Position position) {
 			return ctx -> {
 				Position.Bounds cell = position.cellBounds(ctx.terrainToPixel());
 				ctx.graphics().setColor(color);
@@ -245,7 +245,7 @@ public class TerrainPanel extends JPanel {
 			};
 		}
 
-		private Drawer thickSquareDrawer(Color color, int borderSize, Position position) {
+		public static Drawer thickSquareDrawer(Color color, int borderSize, Position position) {
 			return ctx -> {
 				Position.Bounds cell = position.cellBounds(ctx.terrainToPixel());
 				for (int i = 0; i < borderSize; i++) {
@@ -258,7 +258,7 @@ public class TerrainPanel extends JPanel {
 			};
 		}
 
-		private Drawer targetDrawer(Color color, int extraRadius, Position position) {
+		public static Drawer targetDrawer(Color color, int extraRadius, Position position) {
 			return ctx -> {
 				PositionConverter terrainToPixel = ctx.terrainToPixel();
 				Bounds cell = position.cellBounds(terrainToPixel);

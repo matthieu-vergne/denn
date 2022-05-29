@@ -74,7 +74,6 @@ import ia.terrain.Terrain;
 import ia.window.SettingsPanel.Settings;
 import ia.window.TerrainPanel.DrawContext;
 import ia.window.TerrainPanel.Drawer;
-import ia.window.TerrainPanel.DrawerFactory;
 import ia.window.TerrainPanel.Pointer;
 import ia.window.TerrainPanel.PointerRenderer;
 
@@ -82,7 +81,6 @@ public class Window {
 
 	private final JFrame frame;
 	private List<Function<Position, Color>> filters = new LinkedList<>();
-	// FIXME Iterations should stop on close
 	private boolean isWindowClosed = false;
 	private final List<Runnable> closeListeners = new LinkedList<>();
 
@@ -125,9 +123,8 @@ public class Window {
 	private RepaintManager createRepaintManager(TaskFactory taskFactory) {
 		WeakHashMap<TerrainPanel, List<Rectangle>> dirtyRegions = new WeakHashMap<>();
 		AtomicReference<Runnable> availablePainter = new AtomicReference<Runnable>();
-		Runnable[] painter = { null };
-		painter[0] = taskFactory.stopIfWindowClosed(() -> {
-			availablePainter.set(painter[0]);
+		availablePainter.set(taskFactory.stopIfWindowClosed(painter -> {
+			availablePainter.set(painter.get());
 			dirtyRegions.entrySet().forEach(entry -> {
 				TerrainPanel terrainPanel = entry.getKey();
 				List<Rectangle> rectangles = dirtyRegions.get(terrainPanel);
@@ -136,8 +133,7 @@ public class Window {
 				});
 				rectangles.clear();
 			});
-		});
-		availablePainter.set(painter[0]);
+		}));
 		RepaintManager repaintManager = new RepaintManager() {
 
 			@Override
@@ -268,11 +264,7 @@ public class Window {
 			Function<Agent, Color> colorize = agentColorizer::colorize;
 			Drawer agentDrawer = Drawer.forEachAgent(terrain.agents(), colorize.andThen(Drawer::filler));
 
-			// TODO Simplify pointers Drawer
-			Function<Pointer, Drawer> drawerFactory = pointer -> ctx -> {
-				pointer.renderer().createDrawer(new DrawerFactory(), pointer.position()).draw(ctx);
-			};
-			Drawer pointersDrawer = pointersSupplier.get().map(drawerFactory).collect(toCompositeDrawer());
+			Drawer pointersDrawer = pointersSupplier.get().map(Pointer::createDrawer).collect(toCompositeDrawer());
 
 			return backgroundDrawer.then(filterDrawer).then(agentDrawer).then(pointersDrawer);
 		});
@@ -319,7 +311,7 @@ public class Window {
 
 		GraphicsCatcher graphics = new GraphicsCatcher();
 		DrawContext ctx = new DrawContext(graphics, terrain, componentBounds);
-		pointerRenderer.createDrawer(new DrawerFactory(), position).draw(ctx);
+		pointerRenderer.createDrawer(position).draw(ctx);
 
 		Position.Bounds drawnBounds = graphics.catchedBounds();
 		drawnBounds = drawnBounds.extend(pointerRenderer.extraStroke());// TODO Catch stroke automatically
@@ -491,18 +483,14 @@ public class Window {
 			if (action instanceof Button.CompositeAction comp) {
 				return Button.create(button.title, () -> {
 					buttonsEnabler.accept(false);
-					invokeLater(taskFactory.stopIfWindowClosed(new Runnable() {
-						Iterator<? extends Button.Action> iterator = comp.steps().iterator();
-
-						@Override
-						public void run() {
-							if (iterator.hasNext()) {
-								iterator.next().execute();
-								terrainPanel.repaint();
-								invokeLater(this);
-							} else {
-								buttonsEnabler.accept(true);
-							}
+					Iterator<? extends Button.Action> iterator = comp.steps().iterator();
+					invokeLater(taskFactory.stopIfWindowClosed(invocation -> {
+						if (iterator.hasNext()) {
+							iterator.next().execute();
+							terrainPanel.repaint();
+							invocation.reinvokeLater();
+						} else {
+							buttonsEnabler.accept(true);
 						}
 					}));
 				});
@@ -522,12 +510,34 @@ public class Window {
 			this.isWindowClosed = isWindowClosed;
 		}
 
-		private Runnable stopIfWindowClosed(Runnable runnable) {
-			return () -> {
-				if (isWindowClosed.get()) {
-					return;
+		static interface Invocation {
+			void reinvokeLater();
+
+			Runnable get();
+		}
+
+		private Runnable stopIfWindowClosed(Consumer<Invocation> runnable) {
+			return new Runnable() {
+				Runnable invocation = this;
+
+				@Override
+				public void run() {
+					if (isWindowClosed.get()) {
+						return;
+					}
+					runnable.accept(new Invocation() {
+
+						@Override
+						public void reinvokeLater() {
+							invokeLater(invocation);
+						}
+
+						@Override
+						public Runnable get() {
+							return invocation;
+						}
+					});
 				}
-				runnable.run();
 			};
 		}
 	}

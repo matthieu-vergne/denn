@@ -1,20 +1,23 @@
 package ia.window;
 
+import static java.time.Instant.*;
 import static java.time.temporal.ChronoUnit.*;
 import static java.util.stream.Collectors.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.*;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Spliterators;
 import java.util.function.Consumer;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
-import java.util.function.UnaryOperator;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -29,20 +32,63 @@ import ia.window.ButtonActionTest.DynamicAction.CallsAsserter;
 class ButtonActionTest {
 
 	@Test
-	void test() {
-		CompositeAction action = Button.Action.wait(Duration.of(0, SECONDS)).times(1);
-		Iterator<Action> iterator = action.steps().iterator();
-		System.out.println("test start");
-		while (iterator.hasNext()) {
-			System.out.println("test get next");
-			Button.Action step = iterator.next();
-			System.out.println("test step: " + step);
-			step.execute();
+	void testThenGeneratesStepsLazilyWithIterator() {
+		DynamicAction action = new DynamicAction(2);// 1 action = 2 steps
+		CompositeAction repeatedAction = action.then(action);// 2 actions = 4 steps
+		CallsAsserter assertCallsOf = action.callsAsserter();
+
+		assertCallsOf.stream(0).check(0).next(0).step(0);
+
+		Iterator<Action> iterator = repeatedAction.steps().iterator();
+		assertCallsOf.stream(0).check(0).next(0).step(0);
+
+		// Step 1 of iteration 1
+		if (!iterator.hasNext()) {
+			throw new IllegalStateException("hasNext should be true");
 		}
-		// assertDoesNotThrow(action::execute);
+		assertCallsOf.stream(1).check(1)/* .next(0) */.step(0);// has next so next() might have been called already
+		Button.Action step1 = iterator.next();
+		assertCallsOf.stream(1).check(1).next(1).step(0);
+		step1.execute();
+		assertCallsOf.stream(1).check(1).next(1).step(1);
+
+		// Step 2 of iteration 1
+		if (!iterator.hasNext()) {
+			throw new IllegalStateException("hasNext should be true");
+		}
+		assertCallsOf.stream(1).check(2)/* .next(1) */.step(1);// has next so next() might have been called already
+		Button.Action step2 = iterator.next();
+		assertCallsOf.stream(1).check(2).next(2).step(1);
+		step2.execute();
+		assertCallsOf.stream(1).check(2).next(2).step(2);
+
+		// Step 1 of iteration 2
+		if (!iterator.hasNext()) {
+			throw new IllegalStateException("hasNext should be true");
+		}
+		assertCallsOf.stream(2).check(4)/* .next(2) */.step(2);// has next so next() might have been called already
+		Button.Action step3 = iterator.next();
+		assertCallsOf.stream(2).check(4).next(3).step(2);
+		step3.execute();
+		assertCallsOf.stream(2).check(4).next(3).step(3);
+
+		// Step 2 of iteration 2
+		if (!iterator.hasNext()) {
+			throw new IllegalStateException("hasNext should be true");
+		}
+		assertCallsOf.stream(2).check(5)/* .next(3) */.step(3);// has next so next() might have been called already
+		Button.Action step4 = iterator.next();
+		assertCallsOf.stream(2).check(5).next(4).step(3);
+		step4.execute();
+		assertCallsOf.stream(2).check(5).next(4).step(4);
+
+		// Stop
+		if (iterator.hasNext()) {
+			throw new IllegalStateException("hasNext should be false");
+		}
+		assertCallsOf.stream(2).check(6).next(4).step(4);
 	}
 
-	// TODO Test other factory methods
 	@Test
 	void testTimesGeneratesStepsLazilyWithIterator() {
 		DynamicAction action = new DynamicAction(2);// 1 action = 2 steps
@@ -58,7 +104,7 @@ class ButtonActionTest {
 		if (!iterator.hasNext()) {
 			throw new IllegalStateException("hasNext should be true");
 		}
-		assertCallsOf.stream(1).check(1).next(0).step(0);
+		assertCallsOf.stream(1).check(1)/* .next(0) */.step(0);// has next so next() might have been called already
 		Button.Action step1 = iterator.next();
 		assertCallsOf.stream(1).check(1).next(1).step(0);
 		step1.execute();
@@ -68,7 +114,7 @@ class ButtonActionTest {
 		if (!iterator.hasNext()) {
 			throw new IllegalStateException("hasNext should be true");
 		}
-		assertCallsOf.stream(1).check(2).next(1).step(1);
+		assertCallsOf.stream(1).check(2)/* .next(1) */.step(1);// has next so next() might have been called already
 		Button.Action step2 = iterator.next();
 		assertCallsOf.stream(1).check(2).next(2).step(1);
 		step2.execute();
@@ -78,27 +124,27 @@ class ButtonActionTest {
 		if (!iterator.hasNext()) {
 			throw new IllegalStateException("hasNext should be true");
 		}
-		assertCallsOf.stream(2).check(3).next(2).step(2);
+		assertCallsOf.stream(2).check(4)/* .next(2) */.step(2);// has next so next() might have been called already
 		Button.Action step3 = iterator.next();
-		assertCallsOf.stream(2).check(3).next(3).step(2);
+		assertCallsOf.stream(2).check(4).next(3).step(2);
 		step3.execute();
-		assertCallsOf.stream(2).check(3).next(3).step(3);
+		assertCallsOf.stream(2).check(4).next(3).step(3);
 
 		// Step 2 of iteration 2
 		if (!iterator.hasNext()) {
 			throw new IllegalStateException("hasNext should be true");
 		}
-		assertCallsOf.stream(2).check(4).next(3).step(3);
+		assertCallsOf.stream(2).check(5)/* .next(3) */.step(3);// has next so next() might have been called already
 		Button.Action step4 = iterator.next();
-		assertCallsOf.stream(2).check(4).next(4).step(3);
+		assertCallsOf.stream(2).check(5).next(4).step(3);
 		step4.execute();
-		assertCallsOf.stream(2).check(4).next(4).step(4);
+		assertCallsOf.stream(2).check(5).next(4).step(4);
 
 		// Stop
 		if (iterator.hasNext()) {
 			throw new IllegalStateException("hasNext should be false");
 		}
-		assertCallsOf.stream(3).check(5).next(4).step(4);
+		assertCallsOf.stream(2).check(6).next(4).step(4);
 	}
 
 	static Stream<Arguments> testThenAddSteps() {
@@ -108,8 +154,7 @@ class ButtonActionTest {
 				arguments(compositeAction(3, "A"), compositeAction(2, "B"), 5), //
 				arguments(compositeAction(0, "A"), compositeAction(2, "B"), 2), //
 				arguments(compositeAction(3, "A"), compositeAction(0, "B"), 3), //
-				arguments(compositeAction(0, "A"), compositeAction(0, "B"), 0), //
-				null//
+				arguments(compositeAction(0, "A"), compositeAction(0, "B"), 0) //
 		);
 	}
 
@@ -199,6 +244,46 @@ class ButtonActionTest {
 		assertEquals(30, counter[0]);
 	}
 
+	@Test
+	void testWaitDoesNotStartBeforeFirstStepIsExecuted() throws InterruptedException {
+		Duration waitDuration = Duration.of(100, MILLIS);
+		CompositeAction action = Action.wait(waitDuration);
+		Iterator<Action> iterator = action.steps().iterator();
+
+		Instant preparationEnd = now().plus(waitDuration.multipliedBy(3));// Way after the wait duration
+		while (now().isBefore(preparationEnd)) {
+			assertTrue(iterator.hasNext());// Still has step to execute
+			iterator.next();// Retrieve step but does not execute to not start
+		}
+	}
+
+	@Test
+	void testWaitHasStepsWhileWaiting() throws InterruptedException {
+		Duration waitDuration = Duration.of(100, MILLIS);
+		CompositeAction action = Action.wait(waitDuration);
+		Iterator<Action> iterator = action.steps().iterator();
+
+		iterator.next().execute();// Start waiting
+		Duration margin = waitDuration.dividedBy(10);// 10% of waiting time
+		Instant waitingEnd = now().plus(waitDuration.minus(margin));// 90% of waiting time
+		while (now().isBefore(waitingEnd)) {
+			assertTrue(iterator.hasNext());// Still has step to execute
+			iterator.next().execute();
+		}
+	}
+
+	@Test
+	void testWaitHaveNoMoreStepsAfterWaiting() throws InterruptedException {
+		Duration waitDuration = Duration.of(100, MILLIS);
+		CompositeAction action = Action.wait(waitDuration);
+		Iterator<Action> iterator = action.steps().iterator();
+
+		iterator.next().execute();// Start waiting
+		Duration margin = waitDuration.dividedBy(10);// 10% of waiting time
+		Thread.sleep(waitDuration.plus(margin).toMillis());// 110% of waiting time
+		assertFalse(iterator.hasNext());
+	}
+
 	private static Action action(String name) {
 		return action(name, action -> {
 			// Do nothing
@@ -255,23 +340,30 @@ class ButtonActionTest {
 		private final Supplier<Stream<Action>> stream;
 
 		public DynamicAction(int steps) {
-			Action step = () -> {
-				System.out.println("step");
-				stepCalls++;
-			};
-			Predicate<Action> check = action -> {
-				System.out.println("check");
-				return checkCalls++ < steps;
-			};
-			UnaryOperator<Action> next = action -> {
-				System.out.println("next");
-				nextCalls++;
-				return action;
-			};
 			this.stream = () -> {
-				System.out.println("stream");
 				streamCalls++;
-				return Stream.iterate(step, check, next);
+				Iterator<Action> iterator = new Iterator<Button.Action>() {
+					int remainingSteps = steps;
+
+					@Override
+					public boolean hasNext() {
+						checkCalls++;
+						return remainingSteps > 0;
+					}
+
+					@Override
+					public Action next() {
+						nextCalls++;
+						if (remainingSteps <= 0) {
+							throw new NoSuchElementException();
+						}
+						remainingSteps--;
+						return () -> {
+							stepCalls++;
+						};
+					}
+				};
+				return StreamSupport.stream(Spliterators.spliterator(iterator, steps, 0), false);
 			};
 		}
 
