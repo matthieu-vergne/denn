@@ -78,7 +78,7 @@ class PositionConverterTest {
 	@MethodSource("inputs")
 	void testConvert(Position srcPosition, Position destPosition, Position.Bounds srcBounds,
 			Position.Bounds destBounds) {
-		assertEquals(destPosition, new PositionConverter(srcBounds, destBounds).convert(srcPosition));
+		assertEquals(destPosition, PositionConverter.createFromBounds(srcBounds, destBounds).convert(srcPosition));
 	}
 
 	@ParameterizedTest(name = "{0} gives {1} from {2} to {3}")
@@ -86,7 +86,7 @@ class PositionConverterTest {
 	void testReverse(Position srcPosition, Position destPosition, Position.Bounds srcBounds,
 			Position.Bounds destBounds) {
 		// Reverse bounds in initial converter to get usual bounds after reversing
-		assertEquals(destPosition, new PositionConverter(destBounds, srcBounds).reverse().convert(srcPosition));
+		assertEquals(destPosition, PositionConverter.createFromBounds(destBounds, srcBounds).reverse().convert(srcPosition));
 	}
 
 }

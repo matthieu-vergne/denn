@@ -6,19 +6,36 @@ import ia.terrain.Position;
 
 public class PositionConverter {
 
-	private final Position.Bounds sourceBounds;
-	private final Position.Bounds destinationBounds;
-	private final UnaryOperator<Position> computer;
+	private final UnaryOperator<Position> conversion;
+	private final UnaryOperator<Position> reverseConversion;
 
-	public PositionConverter(Position.Bounds sourceBounds, Position.Bounds destinationBounds) {
-		this.sourceBounds = sourceBounds;
-		this.destinationBounds = destinationBounds;
+	private PositionConverter(UnaryOperator<Position> conversion, UnaryOperator<Position> reverseConversion) {
+		this.conversion = conversion;
+		this.reverseConversion = reverseConversion;
+	}
+
+	public static PositionConverter createFromBounds(Position.Bounds sourceBounds, Position.Bounds destinationBounds) {
 		// TODO Choose best implementation
-		this.computer = Implementation.computeNaively(sourceBounds, destinationBounds);
+		return new PositionConverter(//
+				Implementation.computeNaively(sourceBounds, destinationBounds), //
+				Implementation.computeNaively(destinationBounds, sourceBounds)//
+		);
+	}
+
+	public static PositionConverter createFromConversion(UnaryOperator<Position> conversion,
+			UnaryOperator<Position> reverseConversion) {
+		return new PositionConverter(conversion, reverseConversion);
+	}
+
+	public static PositionConverter createFromConversion(UnaryOperator<Position> conversion) {
+		IllegalArgumentException missingReverseException = new IllegalArgumentException("Missing reversed conversion");
+		return new PositionConverter(conversion, position -> {
+			throw new IllegalStateException("Cannot convert", missingReverseException);
+		});
 	}
 
 	public Position convert(Position sourcePosition) {
-		return computer.apply(sourcePosition);
+		return conversion.apply(sourcePosition);
 	}
 
 	public Position.Bounds convert(Position.Bounds sourceBounds) {
@@ -26,7 +43,7 @@ public class PositionConverter {
 	}
 
 	public PositionConverter reverse() {
-		return new PositionConverter(destinationBounds, sourceBounds);
+		return new PositionConverter(reverseConversion, conversion);
 	};
 
 	@SuppressWarnings("unused")

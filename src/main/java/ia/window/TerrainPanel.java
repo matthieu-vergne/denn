@@ -56,7 +56,7 @@ public class TerrainPanel extends JPanel {
 		Position minPixel = Position.ORIGIN;
 		Position maxPixel = Position.at(this.getWidth() - 1, this.getHeight() - 1);
 		Position.Bounds pixelBounds = Position.Bounds.between(minPixel, maxPixel);
-		return new PositionConverter(pixelBounds, terrain.bounds());
+		return PositionConverter.createFromBounds(pixelBounds, terrain.bounds());
 	}
 
 	public void repaint(Position.Bounds bounds) {
@@ -205,11 +205,11 @@ public class TerrainPanel extends JPanel {
 	record DrawContext(Graphics2D graphics, Terrain terrain, Position.Bounds componentBounds) {
 
 		public PositionConverter pixelToTerrain() {
-			return new PositionConverter(componentBounds, terrain.bounds());
+			return PositionConverter.createFromBounds(componentBounds, terrain.bounds());
 		}
 
 		public PositionConverter terrainToPixel() {
-			return new PositionConverter(terrain.bounds(), componentBounds);
+			return PositionConverter.createFromBounds(terrain.bounds(), componentBounds);
 		}
 
 		public static DrawContext create(Terrain terrain, JComponent component, Graphics graphics) {

@@ -50,10 +50,10 @@ public class AttractorsPanel extends TerrainPanel {
 
 	@Override
 	public Dimension getPreferredSize() {
-		int parentWidth = parentAvailableWidth(this);
+		int parentWidth = Utils.parentAvailableDimension(this).width;
 		return new Dimension(parentWidth, parentWidth * terrain.height() / terrain.width());
 	}
-
+	
 	public void startComputingAttractors(Program program) {
 		tasker.accept(program);
 	}
@@ -93,6 +93,7 @@ public class AttractorsPanel extends TerrainPanel {
 			Stream<Position> terrainClipPositions = terrainClipBounds.allPositions();
 			// TODO Redraw all on scale update (min/max)
 			// TODO Optimize large surface drawing
+			// TODO Extract processing out of Swing context
 			Drawer requestedDrawer = Drawer.forEachPosition(terrainClipPositions, position -> {
 				if (ctx.hasAttractor.test(position)) {
 					Color color = ctx.attractorColorizer.apply(position);
@@ -312,13 +313,6 @@ public class AttractorsPanel extends TerrainPanel {
 			}
 			runnable.run();
 		};
-	}
-
-	private static int parentAvailableWidth(JComponent component) {
-		JComponent parent = (JComponent) component.getParent();
-		Border border = parent.getBorder();
-		Insets insets = border == null ? new Insets(0, 0, 0, 0) : border.getBorderInsets(parent);
-		return parent.getBounds().width - insets.left - insets.right;
 	}
 
 	public static enum ColorFocus {

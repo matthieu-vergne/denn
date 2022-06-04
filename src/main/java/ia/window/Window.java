@@ -20,6 +20,7 @@ import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.Insets;
+import java.awt.LayoutManager;
 import java.awt.Paint;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -63,8 +64,11 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.RepaintManager;
 import javax.swing.border.TitledBorder;
+import javax.swing.plaf.basic.BasicTabbedPaneUI.TabbedPaneLayout;
 
 import ia.agent.Agent;
+import ia.agent.LayeredNetwork;
+import ia.agent.LayeredNetwork.Description;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Program;
@@ -327,9 +331,13 @@ public class Window {
 		mouseOnTerrain.listenExit(() -> moveLabel.setText(" "));
 
 		JLabel selectLabel = new JLabel(" ");
+
 		JTextArea programInfoArea = new JTextArea();
 		programInfoArea.setEditable(false);
 		programInfoArea.setBackground(null);
+
+		JPanel networkInfoPanel = new JPanel(new GridLayout());
+
 		JPanel attractorsInfoPanel = new JPanel();
 		attractorsInfoPanel.setLayout(new GridBagLayout());
 		GridBagConstraints attractorsConstraint = new GridBagConstraints();
@@ -340,6 +348,7 @@ public class Window {
 		attractorsInfoPanel.add(new JPanel(), attractorsConstraint);
 		attractorsConstraint.gridy = 0;
 		attractorsConstraint.fill = GridBagConstraints.HORIZONTAL;
+		attractorsConstraint.weightx = 1;
 		attractorsConstraint.weighty = 0;
 		attractorsInfoPanel.add(new JPanel(), attractorsConstraint);
 
@@ -386,9 +395,15 @@ public class Window {
 				}
 				agentToComputeFor[0] = null;
 				String noAgentNotice = "No agent there";
+
 				programInfoArea.setText(noAgentNotice);
+
+				networkInfoPanel.removeAll();
+				networkInfoPanel.add(new JLabel(noAgentNotice));
+
 				attractorsInfoPanel.remove(1);
 				attractorsInfoPanel.add(new JLabel(noAgentNotice), attractorsConstraint);
+
 				progressIconEnabler.accept(false);
 			} else {
 				Agent selectedAgent = agent.get();
@@ -396,9 +411,17 @@ public class Window {
 					agentToComputeFor[0] = selectedAgent;
 					Chromosome chromosome = selectedAgent.chromosome();
 					Program program = Program.deserialize(chromosome.bytes());
-					ProgramInfoBuilder infoBuilder = new ProgramInfoBuilder();
-					program.executeOn(infoBuilder);
-					programInfoArea.setText(infoBuilder.build());
+
+					ProgramInfoBuilder codeBuilder = new ProgramInfoBuilder();
+					program.executeOn(codeBuilder);
+					programInfoArea.setText(codeBuilder.build());
+
+					LayeredNetworkInfoBuilder networkBuilder = new LayeredNetworkInfoBuilder();
+					program.executeOn(networkBuilder);
+					networkInfoPanel.removeAll();
+					LayeredNetwork.Description build = networkBuilder.build();
+					networkInfoPanel.add(new LayeredNetworkPanel(build));
+
 					progressIconEnabler.accept(true);
 
 					if (previousAgent != null) {
@@ -421,7 +444,9 @@ public class Window {
 
 		JTabbedPane agentInfoTabs = new JTabbedPane();
 		agentInfoTabs.addTab("Program", programInfoArea);
+		agentInfoTabs.addTab("Network", networkInfoPanel);
 		agentInfoTabs.addTab("Attractors", attractorsInfoIcon, attractorsInfoPanel);
+		agentInfoTabs.setSelectedComponent(networkInfoPanel);// TODO Remove
 		progressIconEnabler.accept(false);
 
 		JPanel agentPanel = new JPanel();

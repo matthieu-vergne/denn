@@ -103,6 +103,16 @@ public record Position(int x, int y) {
 			return reduce(-xMin, -xMax, -yMin, -yMax);
 		}
 
+		public Bounds merge(Bounds bounds) {
+			Position min1 = this.min;
+			Position max1 = this.max;
+			Position min2 = bounds.min;
+			Position max2 = bounds.max;
+			Position minAll = Position.at(min(min1.x, min2.x), min(min1.y, min2.y));
+			Position maxAll = Position.at(max(max1.x, max2.x), max(max1.y, max2.y));
+			return Bounds.between(minAll, maxAll);
+		}
+
 		public Stream<Position> allPositions() {
 			return range(min.x, max.x).flatMap(x -> //
 			range(min.y, max.y).flatMap(y -> //

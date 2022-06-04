@@ -1,5 +1,6 @@
 package ia.agent;
 
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.function.Supplier;
@@ -110,5 +111,13 @@ public class LayeredNetwork {
 			this.index = index;
 		}
 
+	}
+
+	public static interface Description {
+
+		Collection<Collection<Integer>> layers();
+
+		Double weight(Integer neuron1, Integer neuron2);
+		String name(Integer neuron);
 	}
 }
