@@ -10,8 +10,8 @@ import java.util.function.UnaryOperator;
 
 import ia.agent.LayeredNetwork;
 import ia.agent.Neural;
-import ia.terrain.Position;
 import ia.terrain.Terrain;
+import ia.utils.Position;
 
 public class Program {
 

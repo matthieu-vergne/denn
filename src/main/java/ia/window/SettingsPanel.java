@@ -3,11 +3,15 @@ package ia.window;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.util.List;
 import java.util.Objects;
+import java.util.Vector;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
@@ -15,10 +19,11 @@ import javax.swing.border.TitledBorder;
 
 import ia.terrain.Terrain;
 import ia.window.AttractorsPanel.ColorFocus;
+import ia.window.LayeredNetworkPanel.Alignment;
 
 @SuppressWarnings("serial")
 class SettingsPanel extends JPanel {
-	record Settings(AttractorsPanel.Settings forAttractors) {
+	record Settings(AttractorsPanel.Settings forAttractors, LayeredNetworkPanel.Settings forLayers) {
 	}
 
 	private static abstract class SubSettingsPanel<T> extends JPanel {
@@ -40,10 +45,13 @@ class SettingsPanel extends JPanel {
 		SubSettingsPanel<AttractorsPanel.Settings> attractorsPanel = createAttractorsPanel(terrain);
 		this.add(attractorsPanel, constraints);
 
-		this.settings = new Settings(attractorsPanel.settings());
+		SubSettingsPanel<LayeredNetworkPanel.Settings> layeredNetworkPanel = createLayeredNetworkPanel();
+		this.add(layeredNetworkPanel, constraints);
+
+		this.settings = new Settings(attractorsPanel.settings(), layeredNetworkPanel.settings());
 	}
 
-	record FieldDefinition<T> (JLabel label, JTextField field, Supplier<T> reader) {
+	record FieldDefinition<T> (JLabel label, JComponent field, Supplier<T> reader) {
 	}
 
 	private SubSettingsPanel<AttractorsPanel.Settings> createAttractorsPanel(Terrain terrain) {
@@ -100,6 +108,30 @@ class SettingsPanel extends JPanel {
 
 		return attractorsPanel;
 	}
+	
+	private SubSettingsPanel<LayeredNetworkPanel.Settings> createLayeredNetworkPanel() {
+		LayeredNetworkPanel.Settings[] settings = { null };
+		SubSettingsPanel<LayeredNetworkPanel.Settings> layeredNetworkPanel = new SubSettingsPanel<LayeredNetworkPanel.Settings>() {
+			@Override
+			public LayeredNetworkPanel.Settings settings() {
+				return settings[0];
+			}
+		};
+		layeredNetworkPanel.setBorder(new TitledBorder("Layers"));
+
+		Consumer<FieldDefinition<?>> fieldAdder = createSettingFieldAdder(layeredNetworkPanel);
+
+		FieldDefinition<LayeredNetworkPanel.Alignment> alignment = createList(//
+				"Alignment", List.of(Alignment.values()), Alignment.CENTER //
+		);
+		fieldAdder.accept(alignment);
+
+		settings[0] = new LayeredNetworkPanel.Settings(//
+				alignment.reader//
+		);
+
+		return layeredNetworkPanel;
+	}
 
 	private <T> Consumer<FieldDefinition<?>> createSettingFieldAdder(SubSettingsPanel<T> panel) {
 		panel.setLayout(new GridBagLayout());
@@ -130,6 +162,13 @@ class SettingsPanel extends JPanel {
 		JTextField field = new JTextField(fieldWriter.apply(defaultValue));
 		Supplier<T> reader = () -> fieldReader.apply(field.getText());
 		return new FieldDefinition<T>(jLabel, field, reader);
+	}
+	
+	private <T> FieldDefinition<T> createList(String label, List<T> values, T defaultValue) {
+		JLabel jLabel = new JLabel(label + ":");
+		JComboBox<T> field = new JComboBox<>(new Vector<>(values));
+		field.setSelectedItem(defaultValue);
+		return new FieldDefinition<T>(jLabel, field, () -> field.getItemAt(field.getSelectedIndex()));
 	}
 
 	public Settings settings() {

@@ -20,7 +20,6 @@ import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.Insets;
-import java.awt.LayoutManager;
 import java.awt.Paint;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -64,17 +63,15 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.RepaintManager;
 import javax.swing.border.TitledBorder;
-import javax.swing.plaf.basic.BasicTabbedPaneUI.TabbedPaneLayout;
 
 import ia.agent.Agent;
 import ia.agent.LayeredNetwork;
-import ia.agent.LayeredNetwork.Description;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Program;
-import ia.terrain.Position;
-import ia.terrain.Position.Bounds;
 import ia.terrain.Terrain;
+import ia.utils.Position;
+import ia.utils.Position.Bounds;
 import ia.window.SettingsPanel.Settings;
 import ia.window.TerrainPanel.DrawContext;
 import ia.window.TerrainPanel.Drawer;
@@ -98,7 +95,7 @@ public class Window {
 		Settings settings = settingsPanel.settings();
 
 		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons, networkFactory,
-				settings.forAttractors(), taskFactory);
+				settings.forAttractors(), taskFactory, settings.forLayers());
 
 		JTabbedPane tabs = new JTabbedPane();
 		// TODO Add agent tab
@@ -192,10 +189,11 @@ public class Window {
 
 	private JPanel createSimulationPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
 			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory,
-			AttractorsPanel.Settings attractorsSettings, TaskFactory taskFactory) {
-		MouseOnTerrain mouseOnTerrain = new MouseOnTerrain();
+			AttractorsPanel.Settings attractorsSettings, TaskFactory taskFactory,
+			LayeredNetworkPanel.Settings layerSettings) {
+		MouseMoveController mouseMoveController = new MouseMoveController();
 
-		TerrainPanel terrainPanel = createTerrainPanel(terrain, cellSize, agentColorizer, mouseOnTerrain);
+		TerrainPanel terrainPanel = createTerrainPanel(terrain, cellSize, agentColorizer, mouseMoveController);
 
 		JPanel[] buttonsPanel = { null };
 		Consumer<Boolean> buttonsEnabler = enable -> Stream.of(buttonsPanel[0].getComponents())
@@ -203,10 +201,11 @@ public class Window {
 		buttonsPanel[0] = createButtonsPanel(withRepaint(buttons, terrainPanel, buttonsEnabler, taskFactory));
 		buttonsPanel[0].setBorder(new TitledBorder("Actions"));
 
-		MouseOnTerrain.TerrainPanelListener listener = mouseOnTerrain.terrainPanelListener(terrain, terrainPanel);
+		MouseMoveController.Listener listener = mouseMoveController.terrainPositionListener(terrainPanel);
 		terrainPanel.addMouseListener(listener);
 		terrainPanel.addMouseMotionListener(listener);
-		JComponent agentPanel = createAgentInfoPanel(mouseOnTerrain, terrain, networkFactory, attractorsSettings);
+		JComponent agentPanel = createAgentInfoPanel(mouseMoveController, terrain, networkFactory, attractorsSettings,
+				layerSettings);
 		JScrollPane agentInfoPanel = new JScrollPane(agentPanel);
 		agentInfoPanel.setBorder(new TitledBorder("Agent Info"));
 
@@ -246,7 +245,7 @@ public class Window {
 	}
 
 	private TerrainPanel createTerrainPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			MouseOnTerrain mouseOnTerrain) {
+			MouseMoveController mouseMoveController) {
 		Position[] positionOf = { null, null };
 		PointerRenderer[] rendererOf = { null, null };
 		int mouse = 0;
@@ -272,7 +271,7 @@ public class Window {
 
 			return backgroundDrawer.then(filterDrawer).then(agentDrawer).then(pointersDrawer);
 		});
-		mouseOnTerrain.listenMove(position -> {
+		mouseMoveController.listenMove(position -> {
 			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = position;
 
@@ -282,13 +281,13 @@ public class Window {
 			}
 			terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, position, pointerRenderer));
 		});
-		mouseOnTerrain.listenExit(() -> {
+		mouseMoveController.listenExit(() -> {
 			Position previousPosition = positionOf[mouse];
 			positionOf[mouse] = null;
 
 			terrainPanel.repaint(retrieveDrawnPositions(terrain, terrainPanel, previousPosition, rendererOf[mouse]));
 		});
-		mouseOnTerrain.listenClick(position -> {
+		mouseMoveController.listenClick(position -> {
 			Position previousPosition = positionOf[selection];
 			positionOf[selection] = position;
 
@@ -324,11 +323,12 @@ public class Window {
 	}
 
 	// TODO Simplify
-	private JPanel createAgentInfoPanel(MouseOnTerrain mouseOnTerrain, Terrain terrain,
-			NeuralNetwork.Factory networkFactory, AttractorsPanel.Settings attractorsSettings) {
+	private JPanel createAgentInfoPanel(MouseMoveController mouseMoveController, Terrain terrain,
+			NeuralNetwork.Factory networkFactory, AttractorsPanel.Settings attractorsSettings,
+			LayeredNetworkPanel.Settings layerSettings) {
 		JLabel moveLabel = new JLabel(" ");
-		mouseOnTerrain.listenMove(position -> moveLabel.setText(position.toString()));
-		mouseOnTerrain.listenExit(() -> moveLabel.setText(" "));
+		mouseMoveController.listenMove(position -> moveLabel.setText(position.toString()));
+		mouseMoveController.listenExit(() -> moveLabel.setText(" "));
 
 		JLabel selectLabel = new JLabel(" ");
 
@@ -385,7 +385,7 @@ public class Window {
 //
 //		cardLayout.first(card);
 
-		mouseOnTerrain.listenClick(position -> {
+		mouseMoveController.listenClick(position -> {
 			selectLabel.setText(position.toString());
 			Agent previousAgent = agentToComputeFor[0];
 			Optional<Agent> agent = terrain.getAgentAt(position);
@@ -420,7 +420,7 @@ public class Window {
 					program.executeOn(networkBuilder);
 					networkInfoPanel.removeAll();
 					LayeredNetwork.Description build = networkBuilder.build();
-					networkInfoPanel.add(new LayeredNetworkPanel(build));
+					networkInfoPanel.add(new LayeredNetworkPanel(build, layerSettings));
 
 					progressIconEnabler.accept(true);
 
@@ -446,7 +446,6 @@ public class Window {
 		agentInfoTabs.addTab("Program", programInfoArea);
 		agentInfoTabs.addTab("Network", networkInfoPanel);
 		agentInfoTabs.addTab("Attractors", attractorsInfoIcon, attractorsInfoPanel);
-		agentInfoTabs.setSelectedComponent(networkInfoPanel);// TODO Remove
 		progressIconEnabler.accept(false);
 
 		JPanel agentPanel = new JPanel();
@@ -628,7 +627,6 @@ public class Window {
 		private int minY = Integer.MAX_VALUE;
 		private int maxX = Integer.MIN_VALUE;
 		private int maxY = Integer.MIN_VALUE;
-		private Stroke stroke;
 
 		public Position.Bounds catchedBounds() {
 			return Position.Bounds.between(Position.at(minX, minY), Position.at(maxX, maxY));
@@ -718,7 +716,6 @@ public class Window {
 
 		@Override
 		public void setStroke(Stroke s) {
-			stroke = s;
 		}
 
 		@Override

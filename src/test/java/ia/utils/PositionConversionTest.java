@@ -1,4 +1,4 @@
-package ia.window;
+package ia.utils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.params.provider.Arguments.*;
@@ -9,9 +9,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import ia.terrain.Position;
+import ia.utils.Position.Conversion;
 
-class PositionConverterTest {
+class PositionConversionTest {
 
 	private static Position p(int x, int y) {
 		return Position.at(x, y);
@@ -74,19 +74,28 @@ class PositionConverterTest {
 		);
 	}
 
-	@ParameterizedTest(name = "{0} gives {1} from {2} to {3}")
-	@MethodSource("inputs")
-	void testConvert(Position srcPosition, Position destPosition, Position.Bounds srcBounds,
-			Position.Bounds destBounds) {
-		assertEquals(destPosition, PositionConverter.createFromBounds(srcBounds, destBounds).convert(srcPosition));
+	public static Stream<Arguments> inputsPerImplementation() {
+		return Stream.of(Conversion.Implementation.values()).flatMap(impl -> //
+		inputs().flatMap(args -> //
+		Stream.of(arguments(Stream.concat(Stream.of(impl), Stream.of(args.get())).toArray()))//
+		));
+	}
+
+	@ParameterizedTest(name = "{0}: {1} gives {2} from {3} to {4}")
+	@MethodSource("inputsPerImplementation")
+	void testConvert(Conversion.Implementation implementation, Position srcPosition, Position destPosition,
+			Position.Bounds srcBounds, Position.Bounds destBounds) {
+		Conversion conversion = Conversion.createFromBounds(srcBounds, destBounds, implementation);
+		assertEquals(destPosition, conversion.convert(srcPosition));
 	}
 
 	@ParameterizedTest(name = "{0} gives {1} from {2} to {3}")
-	@MethodSource("inputs")
-	void testReverse(Position srcPosition, Position destPosition, Position.Bounds srcBounds,
-			Position.Bounds destBounds) {
+	@MethodSource("inputsPerImplementation")
+	void testReverse(Conversion.Implementation implementation, Position srcPosition, Position destPosition,
+			Position.Bounds srcBounds, Position.Bounds destBounds) {
 		// Reverse bounds in initial converter to get usual bounds after reversing
-		assertEquals(destPosition, PositionConverter.createFromBounds(destBounds, srcBounds).reverse().convert(srcPosition));
+		Conversion conversion = Position.Conversion.createFromBounds(destBounds, srcBounds, implementation);
+		assertEquals(destPosition, conversion.reverse().convert(srcPosition));
 	}
 
 }

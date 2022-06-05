@@ -6,7 +6,6 @@ import static javax.swing.SwingUtilities.*;
 
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.Insets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -20,15 +19,12 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import javax.swing.JComponent;
-import javax.swing.border.Border;
-
 import ia.agent.Agent;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
-import ia.terrain.Position;
 import ia.terrain.Terrain;
 import ia.terrain.TerrainInteractor;
+import ia.utils.Position;
 
 // TODO Simplify
 @SuppressWarnings("serial")

@@ -27,9 +27,9 @@ import javax.swing.JPanel;
 import ia.Measure;
 import ia.Measure.Feeder;
 import ia.agent.Agent;
-import ia.terrain.Position;
-import ia.terrain.Position.Bounds;
 import ia.terrain.Terrain;
+import ia.utils.Position;
+import ia.utils.Position.Bounds;
 
 @SuppressWarnings("serial")
 public class TerrainPanel extends JPanel {
@@ -52,11 +52,11 @@ public class TerrainPanel extends JPanel {
 		return true;
 	}
 
-	public PositionConverter pixelToTerrain() {
+	public Position.Conversion pixelToTerrain() {
 		Position minPixel = Position.ORIGIN;
 		Position maxPixel = Position.at(this.getWidth() - 1, this.getHeight() - 1);
 		Position.Bounds pixelBounds = Position.Bounds.between(minPixel, maxPixel);
-		return PositionConverter.createFromBounds(pixelBounds, terrain.bounds());
+		return Position.Conversion.createFromBounds(pixelBounds, terrain.bounds());
 	}
 
 	public void repaint(Position.Bounds bounds) {
@@ -64,7 +64,7 @@ public class TerrainPanel extends JPanel {
 	}
 
 	public void repaint(Position position) {
-		repaint(position.cellBounds(pixelToTerrain().reverse()).paintable().rectangle());
+		repaint(cellBounds(position, pixelToTerrain().reverse()).paintable().rectangle());
 	}
 
 	@Override
@@ -204,12 +204,12 @@ public class TerrainPanel extends JPanel {
 
 	record DrawContext(Graphics2D graphics, Terrain terrain, Position.Bounds componentBounds) {
 
-		public PositionConverter pixelToTerrain() {
-			return PositionConverter.createFromBounds(componentBounds, terrain.bounds());
+		public Position.Conversion pixelToTerrain() {
+			return Position.Conversion.createFromBounds(componentBounds, terrain.bounds());
 		}
 
-		public PositionConverter terrainToPixel() {
-			return PositionConverter.createFromBounds(terrain.bounds(), componentBounds);
+		public Position.Conversion terrainToPixel() {
+			return Position.Conversion.createFromBounds(terrain.bounds(), componentBounds);
 		}
 
 		public static DrawContext create(Terrain terrain, JComponent component, Graphics graphics) {
@@ -229,8 +229,8 @@ public class TerrainPanel extends JPanel {
 		}
 
 		public DrawContext atCell(Position position) {
-			Bounds paintBounds = position.cellBounds(this.terrainToPixel()).paintable();
-			return onGraphics((Graphics2D) graphics.create(paintBounds.min.x(), paintBounds.min.y(),
+			Bounds paintBounds = cellBounds(position, this.terrainToPixel()).paintable();
+			return onGraphics((Graphics2D) graphics.create(paintBounds.min().x(), paintBounds.min().y(),
 					paintBounds.width(), paintBounds.height()));
 		}
 	}
@@ -239,20 +239,20 @@ public class TerrainPanel extends JPanel {
 
 		public static Drawer thinSquareDrawer(Color color, Position position) {
 			return ctx -> {
-				Position.Bounds cell = position.cellBounds(ctx.terrainToPixel());
+				Position.Bounds cell = cellBounds(position, ctx.terrainToPixel());
 				ctx.graphics().setColor(color);
-				ctx.graphics().drawRect(cell.min.x(), cell.min.y(), cell.width(), cell.height());
+				ctx.graphics().drawRect(cell.min().x(), cell.min().y(), cell.width(), cell.height());
 			};
 		}
 
 		public static Drawer thickSquareDrawer(Color color, int borderSize, Position position) {
 			return ctx -> {
-				Position.Bounds cell = position.cellBounds(ctx.terrainToPixel());
+				Position.Bounds cell = cellBounds(position, ctx.terrainToPixel());
 				for (int i = 0; i < borderSize; i++) {
 					Color rectColor = new Color(color.getRed(), color.getGreen(), color.getBlue(),
 							255 * (borderSize - i) / borderSize);
 					ctx.graphics().setColor(rectColor);
-					ctx.graphics().drawRect(cell.min.x() - i, cell.min.y() - i, cell.width() + 2 * i,
+					ctx.graphics().drawRect(cell.min().x() - i, cell.min().y() - i, cell.width() + 2 * i,
 							cell.height() + 2 * i);
 				}
 			};
@@ -260,8 +260,8 @@ public class TerrainPanel extends JPanel {
 
 		public static Drawer targetDrawer(Color color, int extraRadius, Position position) {
 			return ctx -> {
-				PositionConverter terrainToPixel = ctx.terrainToPixel();
-				Bounds cell = position.cellBounds(terrainToPixel);
+				Position.Conversion terrainToPixel = ctx.terrainToPixel();
+				Bounds cell = cellBounds(position, terrainToPixel);
 				double cellSize = max(cell.width(), cell.height());
 				int diameter = (int) round(hypot(cellSize, cellSize)) + 2 * extraRadius;
 				int midWidth = (int) round(cell.width() / 2);
@@ -281,5 +281,11 @@ public class TerrainPanel extends JPanel {
 				ctx.graphics().drawLine(centerX, minY, centerX, maxY);
 			};
 		}
+	}
+	
+	private static Position.Bounds cellBounds(Position positionOnTerrain, Position.Conversion terrainToPixel) {
+		Position topLeft = terrainToPixel.convert(positionOnTerrain);
+		Position bottomRight = terrainToPixel.convert(positionOnTerrain.move(1, 1)).move(-1, -1);
+		return topLeft.boundsTo(bottomRight);
 	}
 }

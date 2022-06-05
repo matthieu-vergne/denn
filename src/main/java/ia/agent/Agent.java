@@ -4,7 +4,7 @@ import static java.util.Objects.*;
 
 import ia.agent.adn.Chromosome;
 import ia.agent.adn.Program;
-import ia.terrain.Position;
+import ia.utils.Position;
 
 public class Agent {
 

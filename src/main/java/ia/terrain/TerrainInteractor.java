@@ -19,6 +19,7 @@ import ia.agent.adn.Chromosome;
 import ia.agent.adn.Mutator;
 import ia.agent.adn.Program;
 import ia.agent.adn.Reproducer;
+import ia.utils.Position;
 import ia.window.Button;
 
 public interface TerrainInteractor {

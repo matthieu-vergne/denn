@@ -9,10 +9,9 @@ import java.util.LinkedList;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import ia.terrain.Position;
-import ia.terrain.Terrain;
+import ia.utils.Position;
 
-public class MouseOnTerrain {
+public class MouseMoveController {
 	private Collection<Consumer<Position>> moveListeners = new LinkedList<>();
 
 	public void listenMove(Consumer<Position> listener) {
@@ -49,14 +48,21 @@ public class MouseOnTerrain {
 		}
 	}
 
-	static interface TerrainPanelListener extends MouseListener, MouseMotionListener {
+	static interface Listener extends MouseListener, MouseMotionListener {
 	}
 
-	public TerrainPanelListener terrainPanelListener(Terrain terrain, TerrainPanel terrainPanel) {
-		Function<Point, Position> positioner = point -> {
+	public Listener terrainPositionListener(TerrainPanel terrainPanel) {
+		return positionListener(point -> {
 			return terrainPanel.pixelToTerrain().convert(Position.at(point.x, point.y));
-		};
-		return new TerrainPanelListener() {
+		});
+	}
+
+	public Listener pointListener() {
+		return positionListener(point -> Position.at(point.x, point.y));
+	}
+
+	public Listener positionListener(Function<Point, Position> positioner) {
+		return new Listener() {
 
 			@Override
 			public void mouseEntered(MouseEvent event) {

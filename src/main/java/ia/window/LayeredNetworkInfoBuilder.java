@@ -22,6 +22,7 @@ public class LayeredNetworkInfoBuilder implements Neural.Builder<LayeredNetwork.
 	private int currentIndex = 0;
 	private final Collection<Integer> nonWeightNeurons;
 	private final Map<Integer, Double> weightNeurons;
+	private final Map<Integer, String> names;
 	private int dX;
 	private int dY;
 
@@ -32,14 +33,20 @@ public class LayeredNetworkInfoBuilder implements Neural.Builder<LayeredNetwork.
 
 	public LayeredNetworkInfoBuilder() {
 		nonWeightNeurons = new LinkedList<>();
-		weightNeurons = new HashMap<Integer, Double>();
+		weightNeurons = new HashMap<>();
+		names = new HashMap<>();
 		readings = new LinkedList<>();
-		nonWeightNeurons.add(nextNeuronIndex++);// x = 0
-		nonWeightNeurons.add(nextNeuronIndex++);// y = 1
+		// x = 0
+		names.put(nextNeuronIndex, "X");
+		nonWeightNeurons.add(nextNeuronIndex++);
+		// y = 1
+		names.put(nextNeuronIndex, "Y");
+		nonWeightNeurons.add(nextNeuronIndex++);
 	}
 
 	@Override
 	public Builder<Description> createNeuronWithFixedSignal(double signal) {
+		names.put(nextNeuronIndex, "" + signal);
 		nonWeightNeurons.add(nextNeuronIndex++);
 		return this;
 	}
@@ -52,24 +59,28 @@ public class LayeredNetworkInfoBuilder implements Neural.Builder<LayeredNetwork.
 
 	@Override
 	public Builder<Description> createNeuronWithRandomSignal() {
+		names.put(nextNeuronIndex, "RAND");
 		nonWeightNeurons.add(nextNeuronIndex++);
 		return this;
 	}
 
 	@Override
 	public Builder<Description> createNeuronWithSumFunction() {
+		names.put(nextNeuronIndex, "SUM");
 		nonWeightNeurons.add(nextNeuronIndex++);
 		return this;
 	}
 
 	@Override
 	public Builder<Description> createNeuronWithMinFunction() {
+		names.put(nextNeuronIndex, "MIN");
 		nonWeightNeurons.add(nextNeuronIndex++);
 		return this;
 	}
 
 	@Override
 	public Builder<Description> createNeuronWithMaxFunction() {
+		names.put(nextNeuronIndex, "MAX");
 		nonWeightNeurons.add(nextNeuronIndex++);
 		return this;
 	}
@@ -151,13 +162,9 @@ public class LayeredNetworkInfoBuilder implements Neural.Builder<LayeredNetwork.
 
 			@Override
 			public String name(Integer neuron) {
-				if (dX == neuron) {
-					return neuron.toString() + ":dX";
-				}
-				if (dY == neuron) {
-					return neuron.toString() + ":dY";
-				}
-				return neuron.toString();
+				String postfix = names.get(neuron);
+				String prefix = dX == neuron ? "dX:" : dY == neuron ? "dY:" : "";
+				return prefix + postfix;
 			}
 		};
 	}

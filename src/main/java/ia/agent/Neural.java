@@ -2,7 +2,7 @@ package ia.agent;
 
 import java.util.function.Supplier;
 
-import ia.terrain.Position;
+import ia.utils.Position;
 
 public interface Neural<T> {
 

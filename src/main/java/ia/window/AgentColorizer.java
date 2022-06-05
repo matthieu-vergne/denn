@@ -24,8 +24,8 @@ import ia.agent.Agent;
 import ia.agent.Neural.Builder;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
-import ia.terrain.Position;
 import ia.terrain.Terrain;
+import ia.utils.Position;
 
 // TODO Support simple case: fixed network + weights-based color
 // TODO Can we do something with wave function collapse? https://www.procjam.com/tutorials/wfc/

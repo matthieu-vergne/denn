@@ -11,6 +11,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import ia.agent.Agent;
+import ia.utils.Position;
 
 public class Terrain {
 

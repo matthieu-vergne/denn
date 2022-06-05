@@ -16,7 +16,7 @@ import java.util.function.Supplier;
 import java.util.stream.DoubleStream;
 
 import ia.agent.adn.Program;
-import ia.terrain.Position;
+import ia.utils.Position;
 
 public interface NeuralNetwork {
 
