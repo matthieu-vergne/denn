@@ -5,9 +5,14 @@ import static java.util.Spliterators.spliteratorUnknownSize;
 import static java.util.stream.StreamSupport.stream;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.stream.Stream;
 
 public class StreamUtils {
+	public static <T> Stream<T> cycleOver(List<T> elements) {
+		return Stream.iterate(elements, list -> true, list -> list).flatMap(List<T>::stream);
+	}
+
 	public static <T> Stream<T> flattenLazily(Stream<Stream<T>> streamOfStreams) {
 		/**
 		 * The idiomatic way to flatten a stream of streams is with flatMap(). However,

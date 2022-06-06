@@ -28,19 +28,20 @@ import javax.swing.JPanel;
 import ia.agent.LayeredNetwork;
 import ia.utils.Position;
 
+// TODO Allow interactions to modify the weights
 @SuppressWarnings("serial")
 public class LayeredNetworkPanel extends JPanel {
 
 	private final Infos infos;
 	private Optional<Position> mousePosition = Optional.empty();
 
-	record Settings(Supplier<Alignment> alignment) {
+	record Settings(Supplier<Alignment> nodesAlignment) {
 	}
 
 	public LayeredNetworkPanel(LayeredNetwork.Description description, Settings settings) {
 		Collection<Collection<Integer>> layers = description.layers();
 		this.infos = new Infos(//
-				computeInfosForNodes(layers, description::name, settings.alignment), //
+				computeInfosForNodes(layers, description::name, settings), //
 				computeInfosForLinks(layers, description::weight), //
 				layerMaxSize(layers)//
 		);
@@ -213,8 +214,9 @@ public class LayeredNetworkPanel extends JPanel {
 	}
 
 	private Map<Object, NodeInfo> computeInfosForNodes(Collection<Collection<Integer>> layers,
-			Function<Integer, String> nodeNamer, Supplier<Alignment> nodeAlignment) {
-		Aligner aligner = nodeAlignment.get().compute(layers);
+			Function<Integer, String> nodeNamer, Settings settings) {
+		// TODO Make alignment dynamic (change upon setting modification)
+		Aligner aligner = settings.nodesAlignment.get().compute(layers);
 		Map<Object, NodeInfo> infos = new HashMap<>();
 		Iterator<Collection<Integer>> layerIterator = layers.iterator();
 		for (int y = 0; layerIterator.hasNext(); y++) {

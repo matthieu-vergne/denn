@@ -305,12 +305,11 @@ public class Window {
 		return terrainPanel;
 	}
 
-	// TODO Simplify
 	private Position.Bounds retrieveDrawnPositions(Terrain terrain, TerrainPanel terrainPanel, Position position,
 			PointerRenderer pointerRenderer) {
 		Position minPixel = Position.ORIGIN;
 		Position maxPixel = Position.at(terrainPanel.getWidth() - 1, terrainPanel.getHeight() - 1);
-		Bounds componentBounds = minPixel.boundsTo(maxPixel);
+		Bounds componentBounds = Position.Bounds.between(minPixel, maxPixel);
 
 		GraphicsCatcher graphics = new GraphicsCatcher();
 		DrawContext ctx = new DrawContext(graphics, terrain, componentBounds);
@@ -414,6 +413,7 @@ public class Window {
 
 					ProgramInfoBuilder codeBuilder = new ProgramInfoBuilder();
 					program.executeOn(codeBuilder);
+					// TODO Allow interactions to modify the program
 					programInfoArea.setText(codeBuilder.build());
 
 					LayeredNetworkInfoBuilder networkBuilder = new LayeredNetworkInfoBuilder();

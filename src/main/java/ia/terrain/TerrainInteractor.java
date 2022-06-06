@@ -182,9 +182,9 @@ public interface TerrainInteractor {
 					return new Factory(terrain, random, safeDistance, Optional.of(deathDistance));
 				}
 
-				public OnPosition fromPosition(Position safePosition) {
+				public OnPosition fromPosition(Position target) {
 					Supplier<Double> limitDistance = limitDistanceSupplier();
-					return position -> safePosition.distanceTo(position) <= limitDistance.get();
+					return position -> target.distanceTo(position) <= limitDistance.get();
 				}
 
 				public OnPosition fromTopLeft() {

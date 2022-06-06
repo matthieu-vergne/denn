@@ -31,6 +31,7 @@ import ia.terrain.Terrain;
 import ia.utils.Position;
 import ia.utils.Position.Bounds;
 
+// TODO Allow interactions to modify the agents
 @SuppressWarnings("serial")
 public class TerrainPanel extends JPanel {
 
@@ -216,7 +217,7 @@ public class TerrainPanel extends JPanel {
 			Graphics2D graphics2D = (Graphics2D) graphics;
 			Position minPixel = Position.at(0, 0);
 			Position maxPixel = Position.at(component.getWidth() - 1, component.getHeight() - 1);
-			return new DrawContext(graphics2D, terrain, minPixel.boundsTo(maxPixel));
+			return new DrawContext(graphics2D, terrain, Position.Bounds.between(minPixel, maxPixel));
 		}
 
 		public DrawContext onGraphics(Graphics2D graphics2D) {
@@ -286,6 +287,6 @@ public class TerrainPanel extends JPanel {
 	private static Position.Bounds cellBounds(Position positionOnTerrain, Position.Conversion terrainToPixel) {
 		Position topLeft = terrainToPixel.convert(positionOnTerrain);
 		Position bottomRight = terrainToPixel.convert(positionOnTerrain.move(1, 1)).move(-1, -1);
-		return topLeft.boundsTo(bottomRight);
+		return Position.Bounds.between(topLeft, bottomRight);
 	}
 }

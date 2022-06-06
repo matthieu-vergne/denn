@@ -9,7 +9,6 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -24,10 +23,10 @@ import ia.agent.Agent;
 import ia.agent.Neural.Builder;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
+import ia.terrain.AttractorsComputer;
 import ia.terrain.Terrain;
 import ia.utils.Position;
 
-// TODO Support simple case: fixed network + weights-based color
 // TODO Can we do something with wave function collapse? https://www.procjam.com/tutorials/wfc/
 // TODO Can we do something with dimensions reduction? https://en.wikipedia.org/wiki/Dimensionality_reduction
 // TODO Can we do something with non-linear dimensions reduction? https://en.wikipedia.org/wiki/Nonlinear_dimensionality_reduction
@@ -36,6 +35,11 @@ public interface AgentColorizer {
 	public static final Color TRANSPARENT = new Color(0, 0, 0, 0);
 
 	public Color colorize(Agent agent);
+
+	default AgentColorizer cacheByAgent() {
+		WeakHashMap<Agent, Color> cache = new WeakHashMap<Agent, Color>();
+		return agent -> cache.computeIfAbsent(agent, this::colorize);
+	}
 
 	// TODO New colorizer based on structure?
 	public static AgentColorizer pickingOnChromosome() {
@@ -198,7 +202,7 @@ public interface AgentColorizer {
 				public Builder<Color> createNeuronWithRandomSignal() {
 					return this;
 				}
-				
+
 				@Override
 				public Builder<Color> createNeuronWithWeightedSumFunction(double weight) {
 					weights.add(weight);
@@ -264,7 +268,7 @@ public interface AgentColorizer {
 		};
 	}
 
-	public static AgentColorizer pickingOnBehaviour(Terrain terrain, NeuralNetwork.Factory networkFactory) {
+	public static AgentColorizer pickingOnMoves(Terrain terrain, NeuralNetwork.Factory networkFactory) {
 		boolean[] bitsMemory = new boolean[4];
 		Runnable bitsMemoryReset = () -> {
 			Arrays.fill(bitsMemory, false);
@@ -348,19 +352,15 @@ public interface AgentColorizer {
 
 			return new Color(rgba);
 		};
-
-		WeakHashMap<Agent, Color> cache = new WeakHashMap<Agent, Color>();
-		AgentColorizer cachedColorizer = agent -> cache.computeIfAbsent(agent, agentColorizer::colorize);
-
-		return cachedColorizer;
+		return agentColorizer;
 	}
 
-	private static String stringOf(Color color) {
-		return Arrays.toString(color.getComponents(null));
-	}
+	public static AgentColorizer pickingOnAttractors(Terrain terrain, NeuralNetwork.Factory networkFactory) {
+		AttractorsComputer computer = new AttractorsComputer(networkFactory, terrain, 10, 5,
+				terrain.width() + terrain.height(), 10);
+		// FIXME
 
-	private static String stringOf(Collection<Color> colors) {
-		return colors.stream().map(AgentColorizer::stringOf).collect(joining(" "));
+		throw new RuntimeException("TODO");
 	}
 
 	private static BinaryOperator<Color> colorAccumulator(BinaryOperator<Integer> channelAccumulator) {

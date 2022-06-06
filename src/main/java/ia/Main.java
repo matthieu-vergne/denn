@@ -14,7 +14,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
 
 import ia.agent.Agent;
 import ia.agent.Neural.Builder;
@@ -26,9 +25,8 @@ import ia.terrain.Terrain;
 import ia.terrain.TerrainInteractor.Condition;
 import ia.utils.Position;
 import ia.window.AgentColorizer;
-import ia.window.Window;
-import ia.window.Button.Action;
 import ia.window.Button;
+import ia.window.Window;
 
 public class Main {
 
@@ -44,6 +42,7 @@ public class Main {
 		initializeAgents(terrain, programFactory, agentGenerator);
 		int agentsLimit = 1000;
 
+		// TODO Manage selection criteria in the settings
 		Condition.OnPosition selectionCriterion = new Condition.OnPosition.Factory(terrain, random)
 				.surviveUntil(terrain.width() / 10)//
 				.dieFrom(terrain.width() * 2 / 10)//
@@ -54,9 +53,8 @@ public class Main {
 		Map<Position, Double> survivalRates = estimateSuccessRates(terrain, selectionCriterion);
 		List<List<Button>> buttons = createButtons(random, terrain, networkFactory, programFactory, agentsLimit,
 				selectionCriterion, survivalRates, reproducer, mutator);
-		AgentColorizer agentColorizer = AgentColorizer.pickingOnBehaviour(terrain, networkFactory);
+		AgentColorizer agentColorizer = AgentColorizer.pickingOnMoves(terrain, networkFactory);// .cacheByAgent();
 		int cellSize = 7;
-		// TODO Display network topography
 		// TODO Allow manual agent placement
 		Window window = Window.create(terrain, cellSize, agentColorizer, buttons, networkFactory);
 
@@ -148,8 +146,8 @@ public class Main {
 			terrain.placeAgent(agentGenerator.apply(program), position);
 		};
 		Program mainProgram = programFactory.nonMover();
-		placer.accept(mainProgram, terrain.minPosition());
-		placer.accept(mainProgram, terrain.maxPosition());
+		placer.accept(programFactory.positionMover(terrain.maxPosition()), terrain.minPosition());
+		placer.accept(programFactory.positionMover(terrain.minPosition()), terrain.maxPosition());
 		placer.accept(programFactory.centerMover(terrain),
 				Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
 		placer.accept(programFactory.randomMover(), Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));

@@ -6,24 +6,21 @@ import static javax.swing.SwingUtilities.*;
 
 import java.awt.Color;
 import java.awt.Dimension;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
-import ia.agent.Agent;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
+import ia.terrain.AttractorsComputer;
 import ia.terrain.Terrain;
-import ia.terrain.TerrainInteractor;
 import ia.utils.Position;
 
 // TODO Simplify
@@ -49,7 +46,7 @@ public class AttractorsPanel extends TerrainPanel {
 		int parentWidth = Utils.parentAvailableDimension(this).width;
 		return new Dimension(parentWidth, parentWidth * terrain.height() / terrain.width());
 	}
-	
+
 	public void startComputingAttractors(Program program) {
 		tasker.accept(program);
 	}
@@ -89,7 +86,7 @@ public class AttractorsPanel extends TerrainPanel {
 			Stream<Position> terrainClipPositions = terrainClipBounds.allPositions();
 			// TODO Redraw all on scale update (min/max)
 			// TODO Optimize large surface drawing
-			// TODO Extract processing out of Swing context
+			// TODO Extract processing out of Swing context to use as AgentColorizer
 			Drawer requestedDrawer = Drawer.forEachPosition(terrainClipPositions, position -> {
 				if (ctx.hasAttractor.test(position)) {
 					Color color = ctx.attractorColorizer.apply(position);
@@ -130,7 +127,6 @@ public class AttractorsPanel extends TerrainPanel {
 	};
 
 	private static class JobsContext {
-		Iterator<Position> startPositionIterator;
 		Consumer<Position> countIncrementer;
 		Function<Position, Color> attractorColorizer;
 		Map<Position, Integer> counts;
@@ -138,18 +134,9 @@ public class AttractorsPanel extends TerrainPanel {
 		public Predicate<Position> hasAttractor;
 	}
 
+	// FIXME Remove
 	private static class Jobs {
-		Agent clone;
-		int iteration = 0;
-		int totalIterations = 0;
-		int runIndex = 0;
-		Position startPosition = null;
 		Runnable prepareIterations = UNDEFINED_RUNNABLE;
-		Runnable iterate = UNDEFINED_RUNNABLE;
-		Runnable nextRun = UNDEFINED_RUNNABLE;
-		Runnable nextStartPosition = UNDEFINED_RUNNABLE;
-		public Position previousPosition;
-		public int noMoveCount;
 
 		Runnable firstJob() {
 			return prepareIterations;
@@ -175,39 +162,6 @@ public class AttractorsPanel extends TerrainPanel {
 			max[0] = max(max[0], count);
 			ctx.counts.put(position, count);
 		};
-		ctx.startPositionIterator = new Iterator<Position>() {
-
-			Position minPosition = terrain.minPosition();
-			Position maxPosition = terrain.maxPosition();
-			Position next = minPosition;
-
-			@Override
-			public boolean hasNext() {
-				return next != null;
-			}
-
-			@Override
-			public Position next() {
-				if (next == null) {
-					throw new NoSuchElementException("");
-				}
-				Position position = next;
-				if (position.x() < maxPosition.x()) {
-					next = position.move(1, 0);
-				} else if (position.y() < maxPosition.y()) {
-					next = position.move(-position.x(), 1);
-				} else {
-					next = null;
-				}
-				return position;
-			}
-		};
-		List<Position> startPositions = new LinkedList<>();
-		while (ctx.startPositionIterator.hasNext()) {
-			startPositions.add(ctx.startPositionIterator.next());
-		}
-		Collections.shuffle(startPositions);
-		ctx.startPositionIterator = startPositions.iterator();
 
 		ctx.hasAttractor = ctx.counts::containsKey;
 		ctx.attractorColorizer = position -> {
@@ -232,73 +186,41 @@ public class AttractorsPanel extends TerrainPanel {
 			NeuralNetwork.Factory networkFactory, Program program, int maxStartPositions, int maxRunsPerStartPosition,
 			int maxIterationsPerRun, JobsContext jCtx, Supplier<Boolean> computingSemaphore,
 			List<Consumer<Double>> progressListeners, int runAutoStopThreshold) {
-		int maxIterations = maxStartPositions * maxRunsPerStartPosition * maxIterationsPerRun;
+		AttractorsComputer attractorsComputer = new AttractorsComputer(networkFactory, terrain, maxStartPositions,
+				maxRunsPerStartPosition, maxIterationsPerRun, runAutoStopThreshold);
 
-		Jobs jobs = new Jobs();
-		jobs.startPosition = jCtx.startPositionIterator.next();
-		jobs.prepareIterations = stopIfRequested(computingSemaphore, () -> {
-			jobs.clone = Agent.createFromProgram(networkFactory, program);
-			terrain.placeAgent(jobs.clone, jobs.startPosition);
-			jobs.previousPosition = jobs.startPosition;
-			jobs.noMoveCount = 0;
-			invokeLater(jobs.iterate);
-		});
-		Button.Action iterationAction = TerrainInteractor.moveAgents().on(terrain);
-		jobs.iterate = stopIfRequested(computingSemaphore, () -> {
-			iterationAction.execute();
+		int maxRuns = maxStartPositions * maxRunsPerStartPosition;
+		Consumer<Position> attractorListener = new Consumer<Position>() {
+			int runs = 0;
 
-			Position position = terrain.getAgentPosition(jobs.clone);
-			if (position.equals(jobs.previousPosition)) {
-				jobs.noMoveCount++;
-			} else {
-				jobs.previousPosition = position;
-				jobs.noMoveCount = 0;
+			@Override
+			public void accept(Position position) {
+				jCtx.countIncrementer.accept(position);
+				for (Consumer<Double> listener : progressListeners) {
+					listener.accept((double) ++runs / maxRuns);
+				}
+				if (attractorsPanel.isVisible()) {
+					// TODO if min/max updated, repaint all
+					attractorsPanel.repaint(position);
+				}
 			}
+		};
 
-			if (jobs.noMoveCount == runAutoStopThreshold) {
-				jobs.totalIterations += maxIterationsPerRun - jobs.iteration;
-				jobs.iteration = maxIterationsPerRun;
+		Iterator<Runnable> taskIterator = attractorsComputer.prepareTasks(program, attractorListener);
+		Runnable[] job = {null};
+		job[0] = stopIfRequested(computingSemaphore, () -> {
+			taskIterator.next().run();
+			if (taskIterator.hasNext()) {
+				invokeLater(job[0]);
 			} else {
-				jobs.totalIterations++;
-				jobs.iteration++;
-			}
-
-			if (jobs.iteration >= maxIterationsPerRun) {
-				invokeLater(jobs.nextRun);
-			} else {
-				invokeLater(jobs.iterate);
-			}
-		});
-		jobs.nextRun = stopIfRequested(computingSemaphore, () -> {
-			Position lastPosition = terrain.removeAgent(jobs.clone);
-			jCtx.countIncrementer.accept(lastPosition);
-			for (Consumer<Double> listener : progressListeners) {
-				listener.accept((double) jobs.totalIterations / maxIterations);
-			}
-			if (attractorsPanel.isVisible()) {
-				// TODO if min/max updated, repaint all
-				attractorsPanel.repaint(lastPosition);
-			}
-			jobs.runIndex++;
-			jobs.iteration = 0;
-			if (jobs.runIndex >= maxRunsPerStartPosition) {
-				invokeLater(jobs.nextStartPosition);
-			} else {
-				invokeLater(jobs.prepareIterations);
-			}
-		});
-		jobs.nextStartPosition = stopIfRequested(computingSemaphore, () -> {
-			jobs.runIndex = 0;
-			if (!jCtx.startPositionIterator.hasNext()) {
+				// Force progress termination
 				for (Consumer<Double> listener : progressListeners) {
 					listener.accept(1.0);
 				}
-				return;
-			} else {
-				jobs.startPosition = jCtx.startPositionIterator.next();
-				invokeLater(jobs.prepareIterations);
 			}
 		});
+		Jobs jobs = new Jobs();
+		jobs.prepareIterations = job[0];
 		return jobs;
 	}
 

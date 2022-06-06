@@ -45,9 +45,8 @@ public record Position(int x, int y) {
 		return Bounds.between(this, otherPosition);
 	}
 
-	public Move to(Position otherPosition) {
-		Position that = otherPosition;// Just renaming for readability
-		return Move.create(that.x - this.x, that.y - this.y);
+	public Move to(Position there) {
+		return Move.create(there.x - this.x, there.y - this.y);
 	}
 
 	public static record Bounds(Position min, Position max) {
