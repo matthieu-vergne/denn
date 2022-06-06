@@ -358,9 +358,14 @@ public interface AgentColorizer {
 	public static AgentColorizer pickingOnAttractors(Terrain terrain, NeuralNetwork.Factory networkFactory) {
 		AttractorsComputer computer = new AttractorsComputer(networkFactory, terrain, 10, 5,
 				terrain.width() + terrain.height(), 10);
-		// FIXME
-
-		throw new RuntimeException("TODO");
+		return new AgentColorizer() {
+			
+			@Override
+			public Color colorize(Agent agent) {
+				// FIXME
+				throw new RuntimeException("TODO");
+			}
+		};
 	}
 
 	private static BinaryOperator<Color> colorAccumulator(BinaryOperator<Integer> channelAccumulator) {

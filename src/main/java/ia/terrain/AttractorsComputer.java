@@ -3,10 +3,17 @@ package ia.terrain;
 import static ia.utils.CollectorsUtils.*;
 import static ia.utils.StreamUtils.*;
 
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import ia.agent.Agent;
 import ia.agent.NeuralNetwork;
@@ -79,7 +86,91 @@ public class AttractorsComputer {
 		tasks.iterate = () -> iterate(ctx, tasks);
 		tasks.checkNext = () -> checkNext(ctx, tasks);
 
+		// TODO Refine as streams
+		// Method called trials(), returns Stream<Trial>
+		Stream.of(Trial.fake()).flatMap(trial -> {
+			Position startPosition = trial.startPosition();
+			Stream<Run> runs = trial.runs();
+			return runs;
+		}).flatMap(run -> {
+			Trial trial = run.trial();
+			Stream<Position> path = run.path();// each position
+			run.path().skip(100).findFirst();// attractor after 100 iterations, but execute all
+			run.path().limit(100);// steps to reach attractor after 100 iterations, no execution
+			Stream<Iteration> iterations = run.iterations();
+			return iterations;
+		}).map(iteration -> {
+			Run run = iteration.run();
+			Position positionBefore = iteration.positionBefore();
+			Position positionAfter = iteration.positionAfter();
+			int index = iteration.index();
+			return positionAfter;
+		});
+		
+		Stream<Trial> trials = Stream.of(Trial.fake());
+		// User side
+		Map<Run, Position> attractors = new HashMap<>();
+		class Context2 {
+			Run previousRun = null;
+			Position previousPosition = null;
+			int noMoveCount = 0;
+		}
+		Context2 ctx2 = new Context2();
+		trials.limit(5)// try 5 start positions
+				.flatMap(trial -> trial.runs().limit(10))// 10 runs per start position
+				.flatMap(run -> run.iterations().limit(100))// 100 iterations per run
+				.filter(iteration -> {
+					// Ignore last iterations of the run if 10 stable positions
+					return !(iteration.run().equals(ctx2.previousRun) && ctx2.noMoveCount >= 10);
+				})
+				.forEach(iteration -> {
+					Position position = iteration.positionAfter();
+					if (iteration.run().equals(ctx2.previousRun) && position.equals(ctx2.previousPosition)) {
+						ctx2.noMoveCount++;
+					} else {
+						attractors.put(iteration.run(), position);
+						ctx2.previousPosition = position;
+						ctx2.previousRun = iteration.run();
+						ctx2.noMoveCount = 0;
+					}
+				});
+		// TODO Check laziness
+		// TODO Use other name than "run"
+		// TODO Rename executions methods "run"
+		// TODO Check performance when compute + simulate
 		return iteratorFrom(tasks.prepare);
+	}
+
+	interface Trial {
+		static Trial fake() {
+			return null;
+		}
+
+		Position startPosition();
+
+		Stream<Run> runs();
+	}
+
+	interface Run {
+
+		Stream<Position> path();
+
+		Stream<Iteration> iterations();
+
+		Trial trial();
+	}
+
+	interface Iteration {
+
+		Position nextPosition();
+
+		Position positionBefore();
+
+		Position positionAfter();
+
+		int index();
+
+		Run run();
 	}
 
 	private Optional<ComputingTask> prepare(ComputingContext ctx, ComputingTasks tasks) {
