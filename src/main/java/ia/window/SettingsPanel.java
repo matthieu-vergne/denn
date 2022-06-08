@@ -79,11 +79,11 @@ class SettingsPanel extends JPanel {
 		);
 		fieldAdder.accept(maxRunsPerStartPosition);
 
-		FieldDefinition<Integer> maxIterationsPerRun = createField(//
-				"Max iterations per run", terrain.width() + terrain.height(), //
+		FieldDefinition<Integer> maxStepsPerRun = createField(//
+				"Max steps per run", terrain.width() + terrain.height(), //
 				Objects::toString, Integer::parseInt//
 		);
-		fieldAdder.accept(maxIterationsPerRun);
+		fieldAdder.accept(maxStepsPerRun);
 
 		FieldDefinition<Integer> runAutoStopThreshold = createField(//
 				"Run auto-stop threshold", 10, //
@@ -101,7 +101,7 @@ class SettingsPanel extends JPanel {
 		settings[0] = new AttractorsPanel.Settings(//
 				maxStartPositions.reader, //
 				maxRunsPerStartPosition.reader, //
-				maxIterationsPerRun.reader, //
+				maxStepsPerRun.reader, //
 				runAutoStopThreshold.reader, //
 				colorFocus.reader//
 		);

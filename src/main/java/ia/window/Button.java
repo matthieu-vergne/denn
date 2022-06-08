@@ -1,6 +1,8 @@
 package ia.window;
 
+import static ia.utils.StreamUtils.*;
 import static java.time.Instant.*;
+import static java.util.function.Function.*;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -12,8 +14,6 @@ import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import ia.utils.StreamUtils;
-
 public class Button {
 
 	public static interface Action {
@@ -21,13 +21,11 @@ public class Button {
 
 		default CompositeAction then(Action next) {
 			Action previous = this;
-			return () -> {
-				Stream<Stream<Action>> streamOfStreams = Stream.of(previous, next)//
-						.map(act -> act instanceof CompositeAction comp //
-								? comp.steps()//
-								: Stream.of(act));
-				return StreamUtils.flattenLazily(streamOfStreams);
-			};
+			return () -> lazyFlatMap(Stream.of(previous, next), act -> {
+				return act instanceof CompositeAction comp //
+						? comp.steps()//
+						: Stream.of(act);
+			});
 		}
 
 		default CompositeAction times(int count) {
@@ -42,7 +40,7 @@ public class Button {
 
 				@Override
 				public Stream<Action> steps() {
-					return StreamUtils.flattenLazily(Stream.generate(stepsStream).limit(count));
+					return lazyFlatMap(Stream.generate(stepsStream).limit(count), identity());
 				}
 
 				@Override

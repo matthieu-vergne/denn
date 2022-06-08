@@ -1,5 +1,6 @@
 package ia.window;
 
+import static ia.utils.StreamUtils.*;
 import static java.util.Collections.*;
 import static java.util.stream.Collectors.*;
 
@@ -9,6 +10,7 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -16,6 +18,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
@@ -23,7 +26,8 @@ import ia.agent.Agent;
 import ia.agent.Neural.Builder;
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
-import ia.terrain.AttractorsComputer;
+import ia.terrain.BrowsersFactory;
+import ia.terrain.BrowsersFactory.Step;
 import ia.terrain.Terrain;
 import ia.utils.Position;
 
@@ -356,10 +360,23 @@ public interface AgentColorizer {
 	}
 
 	public static AgentColorizer pickingOnAttractors(Terrain terrain, NeuralNetwork.Factory networkFactory) {
-		AttractorsComputer computer = new AttractorsComputer(networkFactory, terrain, 10, 5,
-				terrain.width() + terrain.height(), 10);
+		BrowsersFactory computer = new BrowsersFactory(networkFactory, terrain);
+		Program program = null;
+		Consumer<Position> attractorsListener = null;
+
+		Iterator<Runnable> iterator = lazyFlatMap(//
+				computer.browsers(program).limit(10), //
+				trial -> trial.paths().limit(5))//
+				.map(run -> (Runnable) () -> {
+					Position attractor = run.steps()//
+							.limit(terrain.width() + terrain.height())//
+							.takeWhile(Step.movesWithin(10))//
+							.map(Step::positionAfter)//
+							.reduce(run.browser().startPosition(), (a, b) -> b);
+					attractorsListener.accept(attractor);
+				}).iterator();
 		return new AgentColorizer() {
-			
+
 			@Override
 			public Color colorize(Agent agent) {
 				// FIXME

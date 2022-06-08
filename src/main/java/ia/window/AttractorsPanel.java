@@ -1,5 +1,6 @@
 package ia.window;
 
+import static ia.utils.StreamUtils.*;
 import static ia.window.TerrainPanel.Drawer.*;
 import static java.lang.Math.*;
 import static javax.swing.SwingUtilities.*;
@@ -19,7 +20,8 @@ import java.util.stream.Stream;
 
 import ia.agent.NeuralNetwork;
 import ia.agent.adn.Program;
-import ia.terrain.AttractorsComputer;
+import ia.terrain.BrowsersFactory;
+import ia.terrain.BrowsersFactory.Step;
 import ia.terrain.Terrain;
 import ia.utils.Position;
 
@@ -62,7 +64,7 @@ public class AttractorsPanel extends TerrainPanel {
 	record Settings(//
 			Supplier<Integer> maxStartPositions, //
 			Supplier<Integer> maxRunsPerStartPosition, //
-			Supplier<Integer> maxIterationsPerRun, //
+			Supplier<Integer> maxStepsPerRun, //
 			Supplier<Integer> runAutoStopThreshold, //
 			Supplier<ColorFocus> colorFocus//
 	) {
@@ -101,7 +103,7 @@ public class AttractorsPanel extends TerrainPanel {
 		Consumer<Program> tasker = program -> {
 			int maxStartPositions = settings.maxStartPositions.get();
 			int maxRunsPerStartPosition = settings.maxRunsPerStartPosition.get();
-			int maxIterationsPerRun = settings.maxIterationsPerRun.get();
+			int maxStepsPerRun = settings.maxStepsPerRun.get();
 			int runAutoStopThreshold = settings.runAutoStopThreshold.get();
 			ColorFocus colorFocus = settings.colorFocus.get();
 
@@ -111,8 +113,8 @@ public class AttractorsPanel extends TerrainPanel {
 			ctx.attractorColorizer = context.attractorColorizer;
 
 			Jobs jobs = createComputingContext(ctx.attractorsPanel, terrain, networkFactory, program, maxStartPositions,
-					maxRunsPerStartPosition, maxIterationsPerRun, context, () -> ctx.shouldBeComputing,
-					progressListeners, runAutoStopThreshold);
+					maxRunsPerStartPosition, maxStepsPerRun, context, () -> ctx.shouldBeComputing, progressListeners,
+					runAutoStopThreshold);
 
 			ctx.shouldBeComputing = true;
 			invokeLater(jobs.firstJob());
@@ -184,12 +186,11 @@ public class AttractorsPanel extends TerrainPanel {
 
 	private static Jobs createComputingContext(AttractorsPanel attractorsPanel, Terrain terrain,
 			NeuralNetwork.Factory networkFactory, Program program, int maxStartPositions, int maxRunsPerStartPosition,
-			int maxIterationsPerRun, JobsContext jCtx, Supplier<Boolean> computingSemaphore,
+			int maxStepsPerRun, JobsContext jCtx, Supplier<Boolean> computingSemaphore,
 			List<Consumer<Double>> progressListeners, int runAutoStopThreshold) {
-		AttractorsComputer attractorsComputer = new AttractorsComputer(networkFactory, terrain, maxStartPositions,
-				maxRunsPerStartPosition, maxIterationsPerRun, runAutoStopThreshold);
 
 		int maxRuns = maxStartPositions * maxRunsPerStartPosition;
+		// TODO Inline
 		Consumer<Position> attractorListener = new Consumer<Position>() {
 			int runs = 0;
 
@@ -205,9 +206,19 @@ public class AttractorsPanel extends TerrainPanel {
 				}
 			}
 		};
-
-		Iterator<Runnable> taskIterator = attractorsComputer.prepareTasks(program, attractorListener);
-		Runnable[] job = {null};
+		BrowsersFactory browsersFactory = new BrowsersFactory(networkFactory, terrain);
+		Iterator<Runnable> taskIterator = lazyFlatMap(//
+				browsersFactory.browsers(program).limit(maxStartPositions), //
+				trial -> trial.paths().limit(maxRunsPerStartPosition))//
+				.map(run -> (Runnable) () -> {
+					Position attractor = run.steps()//
+							.limit(maxStepsPerRun)//
+							.takeWhile(Step.movesWithin(runAutoStopThreshold))//
+							.map(Step::positionAfter)//
+							.reduce(run.browser().startPosition(), (a, b) -> b);
+					attractorListener.accept(attractor);
+				}).iterator();
+		Runnable[] job = { null };
 		job[0] = stopIfRequested(computingSemaphore, () -> {
 			taskIterator.next().run();
 			if (taskIterator.hasNext()) {
