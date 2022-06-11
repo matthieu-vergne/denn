@@ -33,14 +33,14 @@ public class Main {
 	public static void main(String[] args) {
 		Random random = new Random(0);
 
-		Terrain terrain = Terrain.createWithSize(100, 100);
+		Terrain terrain = Terrain.createWithSize(20, 20);
 
 		Supplier<Builder<NeuralNetwork>> networkBuilderGenerator = () -> new NeuralNetwork.Builder(random::nextDouble);
 		NeuralNetwork.Factory networkFactory = new NeuralNetwork.Factory(networkBuilderGenerator, random);
 		Function<Program, Agent> agentGenerator = program -> Agent.createFromProgram(networkFactory, program);
 		Program.Factory programFactory = new Program.Factory();
 		initializeAgents(terrain, programFactory, agentGenerator);
-		int agentsLimit = 1000;
+		int agentsLimit = 100;
 
 		// TODO Manage selection criteria in the settings
 		Condition.OnPosition selectionCriterion = new Condition.OnPosition.Factory(terrain, random)
@@ -53,8 +53,8 @@ public class Main {
 		Map<Position, Double> survivalRates = estimateSuccessRates(terrain, selectionCriterion);
 		List<List<Button>> buttons = createButtons(random, terrain, networkFactory, programFactory, agentsLimit,
 				selectionCriterion, survivalRates, reproducer, mutator);
-		AgentColorizer agentColorizer = AgentColorizer.pickingOnMoves(terrain, networkFactory);// .cacheByAgent();
-		int cellSize = 7;
+		AgentColorizer agentColorizer = AgentColorizer.pickingOnAttractors(terrain, networkFactory).cacheByAgent();
+		int cellSize = 800 / terrain.height();
 		// TODO Allow manual agent placement
 		Window window = Window.create(terrain, cellSize, agentColorizer, buttons, networkFactory);
 
@@ -107,7 +107,7 @@ public class Main {
 
 		Button.Action move = moveAgents().on(terrain);
 		Button.Action reproduce = reproduceAgents(networkFactory, reproducer, mutator, agentsLimit, random).on(terrain);
-		Button.Action fill = fillAgents(networkFactory, programFactory.nonMover()).on(terrain);
+		Button.Action fill = fillAgents(networkFactory, pos -> programFactory.positionMover(pos)).on(terrain);
 		Button.Action dispatch = dispatchAgentRandomly(random).on(terrain);
 		Button.Action select = keepAgents(selectionCriterion).on(terrain).then(terrain::optimize).then(logPopulation)
 				.then(logSurvivalCoverage).then(logSurvivalSuccess);

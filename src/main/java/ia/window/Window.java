@@ -38,6 +38,7 @@ import java.awt.image.ImageObserver;
 import java.awt.image.RenderedImage;
 import java.awt.image.renderable.RenderableImage;
 import java.text.AttributedCharacterIterator;
+import java.time.Duration;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -72,6 +73,7 @@ import ia.agent.adn.Program;
 import ia.terrain.Terrain;
 import ia.utils.Position;
 import ia.utils.Position.Bounds;
+import ia.window.Button.Action;
 import ia.window.SettingsPanel.Settings;
 import ia.window.TerrainPanel.DrawContext;
 import ia.window.TerrainPanel.Drawer;
@@ -95,7 +97,7 @@ public class Window {
 		Settings settings = settingsPanel.settings();
 
 		JPanel simulationPanel = createSimulationPanel(terrain, cellSize, agentColorizer, buttons, networkFactory,
-				settings.forAttractors(), taskFactory, settings.forLayers());
+				settings, taskFactory);
 
 		JTabbedPane tabs = new JTabbedPane();
 		// TODO Add agent tab
@@ -188,9 +190,8 @@ public class Window {
 	}
 
 	private JPanel createSimulationPanel(Terrain terrain, int cellSize, AgentColorizer agentColorizer,
-			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory,
-			AttractorsPanel.Settings attractorsSettings, TaskFactory taskFactory,
-			LayeredNetworkPanel.Settings layerSettings) {
+			List<List<Button>> buttons, NeuralNetwork.Factory networkFactory, Settings settings,
+			TaskFactory taskFactory) {
 		MouseMoveController mouseMoveController = new MouseMoveController();
 
 		TerrainPanel terrainPanel = createTerrainPanel(terrain, cellSize, agentColorizer, mouseMoveController);
@@ -198,14 +199,13 @@ public class Window {
 		JPanel[] buttonsPanel = { null };
 		Consumer<Boolean> buttonsEnabler = enable -> Stream.of(buttonsPanel[0].getComponents())
 				.forEach(component -> component.setEnabled(enable));
-		buttonsPanel[0] = createButtonsPanel(withRepaint(buttons, terrainPanel, buttonsEnabler, taskFactory));
+		buttonsPanel[0] = createButtonsPanel(withRepaint(buttons, terrainPanel, buttonsEnabler, taskFactory, settings));
 		buttonsPanel[0].setBorder(new TitledBorder("Actions"));
 
 		MouseMoveController.Listener listener = mouseMoveController.terrainPositionListener(terrainPanel);
 		terrainPanel.addMouseListener(listener);
 		terrainPanel.addMouseMotionListener(listener);
-		JComponent agentPanel = createAgentInfoPanel(mouseMoveController, terrain, networkFactory, attractorsSettings,
-				layerSettings);
+		JComponent agentPanel = createAgentInfoPanel(mouseMoveController, terrain, networkFactory, settings);
 		JScrollPane agentInfoPanel = new JScrollPane(agentPanel);
 		agentInfoPanel.setBorder(new TitledBorder("Agent Info"));
 
@@ -323,8 +323,7 @@ public class Window {
 
 	// TODO Simplify
 	private JPanel createAgentInfoPanel(MouseMoveController mouseMoveController, Terrain terrain,
-			NeuralNetwork.Factory networkFactory, AttractorsPanel.Settings attractorsSettings,
-			LayeredNetworkPanel.Settings layerSettings) {
+			NeuralNetwork.Factory networkFactory, Settings settings) {
 		JLabel moveLabel = new JLabel(" ");
 		mouseMoveController.listenMove(position -> moveLabel.setText(position.toString()));
 		mouseMoveController.listenExit(() -> moveLabel.setText(" "));
@@ -420,7 +419,7 @@ public class Window {
 					program.executeOn(networkBuilder);
 					networkInfoPanel.removeAll();
 					LayeredNetwork.Description build = networkBuilder.build();
-					networkInfoPanel.add(new LayeredNetworkPanel(build, layerSettings));
+					networkInfoPanel.add(new LayeredNetworkPanel(build, settings.forLayers()));
 
 					progressIconEnabler.accept(true);
 
@@ -429,7 +428,7 @@ public class Window {
 					}
 					Terrain attractors = Terrain.createWithSize(terrain.width(), terrain.height());
 					AttractorsPanel attractorsPanel = AttractorsPanel.on(attractors, networkFactory,
-							attractorsSettings);
+							settings.forAttractors());
 					attractorsPanel.listenComputingProgress(progressUpdater);
 					attractorsInfoPanel.remove(1);
 					attractorsInfoPanel.add(attractorsPanel, attractorsConstraint);
@@ -494,29 +493,41 @@ public class Window {
 	}
 
 	private List<List<Button>> withRepaint(List<List<Button>> buttons, TerrainPanel terrainPanel,
-			Consumer<Boolean> buttonsEnabler, TaskFactory taskFactory) {
+			Consumer<Boolean> buttonsEnabler, TaskFactory taskFactory, Settings settings) {
 		return buttons.stream().map(row -> {
-			return row.stream().map(toButtonWithRepaint(terrainPanel, buttonsEnabler, taskFactory)).collect(toList());
+			return row.stream().map(toButtonWithRepaint(terrainPanel, buttonsEnabler, taskFactory, settings))
+					.collect(toList());
 		}).collect(toList());
 	}
 
 	private Function<Button, Button> toButtonWithRepaint(TerrainPanel terrainPanel, Consumer<Boolean> buttonsEnabler,
-			TaskFactory taskFactory) {
+			TaskFactory taskFactory, Settings settings) {
 		return button -> {
 			Button.Action action = button.action;
 			if (action instanceof Button.CompositeAction comp) {
-				return Button.create(button.title, () -> {
-					buttonsEnabler.accept(false);
-					Iterator<? extends Button.Action> iterator = comp.steps().iterator();
-					invokeLater(taskFactory.stopIfWindowClosed(invocation -> {
-						if (iterator.hasNext()) {
-							iterator.next().execute();
-							terrainPanel.repaint();
-							invocation.reinvokeLater();
-						} else {
-							buttonsEnabler.accept(true);
-						}
-					}));
+				return Button.create(button.title, new Action() {
+					Iterator<Action> waitSteps;
+
+					@Override
+					public void execute() {
+						buttonsEnabler.accept(false);
+						Iterator<? extends Button.Action> iterator = comp.steps().iterator();
+						waitSteps = Button.Action.wait(Duration.ZERO).steps().iterator();
+						invokeLater(taskFactory.stopIfWindowClosed(invocation -> {
+							if (waitSteps.hasNext()) {
+								waitSteps.next().execute();
+								invocation.reinvokeLater();
+							} else if (iterator.hasNext()) {
+								Duration stepMinDuration = settings.miscellaneous().stepMinDuration().get();
+								waitSteps = Button.Action.wait(stepMinDuration).steps().iterator();
+								iterator.next().execute();
+								terrainPanel.repaint();
+								invocation.reinvokeLater();
+							} else {
+								buttonsEnabler.accept(true);
+							}
+						}));
+					}
 				});
 			} else {
 				return Button.create(button.title, () -> {

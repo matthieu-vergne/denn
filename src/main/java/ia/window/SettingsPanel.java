@@ -3,6 +3,8 @@ package ia.window;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.Vector;
@@ -23,7 +25,11 @@ import ia.window.LayeredNetworkPanel.Alignment;
 
 @SuppressWarnings("serial")
 class SettingsPanel extends JPanel {
-	record Settings(AttractorsPanel.Settings forAttractors, LayeredNetworkPanel.Settings forLayers) {
+	record Miscellaneous(Supplier<Duration> stepMinDuration) {
+	}
+
+	record Settings(AttractorsPanel.Settings forAttractors, LayeredNetworkPanel.Settings forLayers,
+			Miscellaneous miscellaneous) {
 	}
 
 	private static abstract class SubSettingsPanel<T> extends JPanel {
@@ -48,7 +54,35 @@ class SettingsPanel extends JPanel {
 		SubSettingsPanel<LayeredNetworkPanel.Settings> layeredNetworkPanel = createLayeredNetworkPanel();
 		this.add(layeredNetworkPanel, constraints);
 
-		this.settings = new Settings(attractorsPanel.settings(), layeredNetworkPanel.settings());
+		SubSettingsPanel<Miscellaneous> miscellaneousPanel = createMiscellaneousPanel();
+		this.add(miscellaneousPanel, constraints);
+
+		this.settings = new Settings(attractorsPanel.settings(), layeredNetworkPanel.settings(),
+				miscellaneousPanel.settings());
+	}
+
+	private SubSettingsPanel<Miscellaneous> createMiscellaneousPanel() {
+		Miscellaneous[] settings = { null };
+		SubSettingsPanel<Miscellaneous> miscellaneousPanel = new SubSettingsPanel<Miscellaneous>() {
+			@Override
+			public Miscellaneous settings() {
+				return settings[0];
+			}
+		};
+		miscellaneousPanel.setBorder(new TitledBorder("Misc."));
+
+		Consumer<FieldDefinition<?>> fieldAdder = createSettingFieldAdder(miscellaneousPanel);
+
+		FieldDefinition<Duration> stepMinDuration = createField(//
+				"Alignment", Duration.of(100, ChronoUnit.MILLIS), //
+				Duration::toString, Duration::parse);
+		fieldAdder.accept(stepMinDuration);
+
+		settings[0] = new Miscellaneous(//
+				stepMinDuration.reader//
+		);
+
+		return miscellaneousPanel;
 	}
 
 	record FieldDefinition<T> (JLabel label, JComponent field, Supplier<T> reader) {
@@ -108,7 +142,7 @@ class SettingsPanel extends JPanel {
 
 		return attractorsPanel;
 	}
-	
+
 	private SubSettingsPanel<LayeredNetworkPanel.Settings> createLayeredNetworkPanel() {
 		LayeredNetworkPanel.Settings[] settings = { null };
 		SubSettingsPanel<LayeredNetworkPanel.Settings> layeredNetworkPanel = new SubSettingsPanel<LayeredNetworkPanel.Settings>() {
@@ -163,7 +197,7 @@ class SettingsPanel extends JPanel {
 		Supplier<T> reader = () -> fieldReader.apply(field.getText());
 		return new FieldDefinition<T>(jLabel, field, reader);
 	}
-	
+
 	private <T> FieldDefinition<T> createList(String label, List<T> values, T defaultValue) {
 		JLabel jLabel = new JLabel(label + ":");
 		JComboBox<T> field = new JComboBox<>(new Vector<>(values));

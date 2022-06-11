@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -81,13 +82,14 @@ public interface TerrainInteractor {
 		};
 	}
 
-	public static TerrainInteractor fillAgents(NeuralNetwork.Factory networkFactory, Program program) {
+	public static TerrainInteractor fillAgents(NeuralNetwork.Factory networkFactory, Function<Position, Program> programFactory) {
 		return terrain -> {
 			return () -> {
 				Iterator<Position> freePosition = terrain.freePositions().iterator();
 				while (freePosition.hasNext()) {
-					Agent clone = Agent.createFromProgram(networkFactory, program);
-					terrain.placeAgent(clone, freePosition.next());
+					Position position = freePosition.next();
+					Agent clone = Agent.createFromProgram(networkFactory, programFactory.apply(position));
+					terrain.placeAgent(clone, position);
 				}
 			};
 		};

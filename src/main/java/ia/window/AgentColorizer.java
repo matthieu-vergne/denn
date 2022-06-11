@@ -1,6 +1,5 @@
 package ia.window;
 
-import static ia.utils.StreamUtils.*;
 import static java.util.Collections.*;
 import static java.util.stream.Collectors.*;
 
@@ -10,7 +9,6 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -18,9 +16,9 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 
 import ia.agent.Agent;
 import ia.agent.Neural.Builder;
@@ -30,6 +28,7 @@ import ia.terrain.BrowsersFactory;
 import ia.terrain.BrowsersFactory.Step;
 import ia.terrain.Terrain;
 import ia.utils.Position;
+import ia.utils.Position.Conversion;
 
 // TODO Can we do something with wave function collapse? https://www.procjam.com/tutorials/wfc/
 // TODO Can we do something with dimensions reduction? https://en.wikipedia.org/wiki/Dimensionality_reduction
@@ -361,28 +360,42 @@ public interface AgentColorizer {
 
 	public static AgentColorizer pickingOnAttractors(Terrain terrain, NeuralNetwork.Factory networkFactory) {
 		BrowsersFactory computer = new BrowsersFactory(networkFactory, terrain);
-		Program program = null;
-		Consumer<Position> attractorsListener = null;
+		Conversion terrainToColorScale = Position.Conversion.createFromBounds(terrain.bounds(),
+				Position.ORIGIN.boundsTo(Position.at(255, 255)));
+		AgentColorizer agentColorizer = agent -> {
+			byte[] bytes = agent.chromosome().bytes();
+			Program program = Program.deserialize(bytes);
+			// FIXME Reduce computation time
+			Stream<Position> attractors = computer.browsers(program).limit(64)// first part of 256 (2^6)
+					.flatMap(browser -> {
+						return browser.paths().limit(4)// second part of 256 (2^2)
+								.map(path -> {
+									return path.steps()//
+											.limit(terrain.width() + terrain.height())//
+											.takeWhile(Step.movesWithin(10))//
+											.reduce(toLast()).get()//
+											.positionAfter();
+								});
+					});
 
-		Iterator<Runnable> iterator = lazyFlatMap(//
-				computer.browsers(program).limit(10), //
-				trial -> trial.paths().limit(5))//
-				.map(run -> (Runnable) () -> {
-					Position attractor = run.steps()//
-							.limit(terrain.width() + terrain.height())//
-							.takeWhile(Step.movesWithin(10))//
-							.map(Step::positionAfter)//
-							.reduce(run.browser().startPosition(), (a, b) -> b);
-					attractorsListener.accept(attractor);
-				}).iterator();
-		return new AgentColorizer() {
+			// TODO Improve color distribution
+			List<Position> allAttractors = attractors.collect(toList());
+			int x = (int) allAttractors.stream().mapToInt(Position::x).average().getAsDouble();
+			int y = (int) allAttractors.stream().mapToInt(Position::y).average().getAsDouble();
+			Position averageAttractor = Position.at(x, y);
+			int differentPositionsCount = (int) allAttractors.stream().distinct().count() - 1;
 
-			@Override
-			public Color colorize(Agent agent) {
-				// FIXME
-				throw new RuntimeException("TODO");
-			}
+			Position colorScale = terrainToColorScale.convert(averageAttractor);
+			int red = colorScale.x();
+			int green = colorScale.y();
+			int blue = differentPositionsCount;
+			return new Color(red, green, blue);
 		};
+		return agentColorizer;
+	}
+
+	private static <T> BinaryOperator<T> toLast() {
+		return (a, b) -> b;
 	}
 
 	private static BinaryOperator<Color> colorAccumulator(BinaryOperator<Integer> channelAccumulator) {
