@@ -1,5 +1,6 @@
 package ia.window;
 
+import static ia.utils.CollectorsUtils.*;
 import static ia.utils.StreamUtils.*;
 import static ia.window.TerrainPanel.Drawer.*;
 import static java.lang.Math.*;
@@ -206,7 +207,7 @@ public class AttractorsPanel extends TerrainPanel {
 				}
 			}
 		};
-		BrowsersFactory browsersFactory = new BrowsersFactory(networkFactory, terrain);
+		BrowsersFactory browsersFactory = new BrowsersFactory(networkFactory, terrain, toShuffledList());
 		Iterator<Runnable> taskIterator = lazyFlatMap(//
 				browsersFactory.browsers(program).limit(maxStartPositions), //
 				trial -> trial.paths().limit(maxRunsPerStartPosition))//

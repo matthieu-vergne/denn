@@ -53,7 +53,8 @@ public class Main {
 		Map<Position, Double> survivalRates = estimateSuccessRates(terrain, selectionCriterion);
 		List<List<Button>> buttons = createButtons(random, terrain, networkFactory, programFactory, agentsLimit,
 				selectionCriterion, survivalRates, reproducer, mutator);
-		AgentColorizer agentColorizer = AgentColorizer.pickingOnAttractors(terrain, networkFactory).cacheByAgent();
+		AgentColorizer agentColorizer = AgentColorizer.pickingOnAttractors(terrain, networkFactory);// .cacheByAgent(new
+																									// WeakHashMap<>());
 		int cellSize = 800 / terrain.height();
 		// TODO Allow manual agent placement
 		Window window = Window.create(terrain, cellSize, agentColorizer, buttons, networkFactory);
@@ -145,14 +146,13 @@ public class Main {
 		BiConsumer<Program, Position> placer = (program, position) -> {
 			terrain.placeAgent(agentGenerator.apply(program), position);
 		};
-		Program mainProgram = programFactory.nonMover();
 		placer.accept(programFactory.positionMover(terrain.maxPosition()), terrain.minPosition());
 		placer.accept(programFactory.positionMover(terrain.minPosition()), terrain.maxPosition());
 		placer.accept(programFactory.centerMover(terrain),
 				Position.at(terrain.width() * 4 / 10, terrain.height() * 4 / 10));
 		placer.accept(programFactory.randomMover(), Position.at(terrain.width() * 4 / 10, terrain.height() * 6 / 10));
-		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 4 / 10));
-		placer.accept(mainProgram, Position.at(terrain.width() * 6 / 10, terrain.height() * 6 / 10));
+		placer.accept(programFactory.nonMover(), Position.at(terrain.width() * 6 / 10, terrain.height() * 4 / 10));
+		placer.accept(programFactory.upMover(), Position.at(terrain.width() * 6 / 10, terrain.height() * 6 / 10));
 	}
 
 	private static Map<Position, Double> estimateSuccessRates(Terrain terrain, Condition.OnPosition positionTrial) {

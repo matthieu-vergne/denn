@@ -44,6 +44,22 @@ public class Terrain {
 		return Position.at(width - 1, height - 1);
 	}
 
+	public Position topLeft() {
+		return Position.at(0, 0);
+	}
+
+	public Position topRight() {
+		return Position.at(width - 1, 0);
+	}
+
+	public Position bottomRight() {
+		return Position.at(width - 1, height - 1);
+	}
+
+	public Position bottomLeft() {
+		return Position.at(0, height - 1);
+	}
+
 	public Position centerPosition() {
 		return Position.at(width / 2, height / 2);
 	}

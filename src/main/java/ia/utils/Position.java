@@ -46,7 +46,7 @@ public record Position(int x, int y) {
 	}
 
 	public Move to(Position there) {
-		return Move.create(there.x - this.x, there.y - this.y);
+		return new Move(there.x - this.x, there.y - this.y);
 	}
 
 	public static record Bounds(Position min, Position max) {
@@ -159,8 +159,8 @@ public record Position(int x, int y) {
 
 	public record Move(int dX, int dY) {
 
-		public static Move create(int dX, int dY) {
-			return new Move(dX, dY);
+		public Move absolute() {
+			return new Move(abs(dX), abs(dY));
 		}
 	}
 
@@ -210,25 +210,25 @@ public record Position(int x, int y) {
 		public Conversion reverse() {
 			return new Conversion(reverseConversion, conversion);
 		};
-		
+
 		public static enum Implementation {
-			NAIVE(Implementation::computeNaively),//
-			DOUBLE_FACTORS(Implementation::computeOnDoubleFactors),//
+			NAIVE(Implementation::computeNaively), //
+			DOUBLE_FACTORS(Implementation::computeOnDoubleFactors), //
 			MINIMAL_OPS(Implementation::computeOnMinimalIntOperations),//
 			;
-			
+
 			public static final Implementation DEFAULT = NAIVE;// Separate constant to not be in values()
-			
+
 			private final BiFunction<Bounds, Bounds, UnaryOperator<Position>> implementation;
 
 			private Implementation(BiFunction<Bounds, Bounds, UnaryOperator<Position>> implementation) {
 				this.implementation = implementation;
 			}
-			
+
 			UnaryOperator<Position> apply(Bounds sourceBounds, Bounds destinationBounds) {
 				return implementation.apply(sourceBounds, destinationBounds);
 			}
-			
+
 			public static UnaryOperator<Position> computeNaively(Bounds sourceBounds, Bounds destinationBounds) {
 				return sourcePosition -> {
 					return Position.at(//

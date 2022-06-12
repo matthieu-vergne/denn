@@ -83,19 +83,19 @@ public interface NeuralNetwork {
 		private int currentNeuronIndex = 0;
 		private Integer dXIndex = null;
 		private Integer dYIndex = null;
-		
+
 		// TODO remove
 		public static interface Rand {
 			double next();
 		}
-		
+
 		// TODO remove
 		public Builder() {
 			this(() -> {
 				throw new RuntimeException("No random provided");
 			});
 		}
-		
+
 		public Builder(Rand random) {
 			this.random = random;
 			NeuralFunction noFunctionYet = inputs -> {
@@ -112,7 +112,7 @@ public interface NeuralNetwork {
 			inputsMap.put(neuronIndex, new LinkedList<>());
 			return this;
 		}
-		
+
 		@Override
 		public ia.agent.Neural.Builder<NeuralNetwork> createNeuronWithRandomSignal() {
 			return createNeuronWith(suppliedSignal(() -> random.next()));
@@ -215,7 +215,7 @@ public interface NeuralNetwork {
 
 				@Override
 				public Position.Move output() {
-					return Position.Move.create(//
+					return new Position.Move(//
 							toUnitaryMove(readSignal(neurons, dXIndex)), //
 							toUnitaryMove(readSignal(neurons, dYIndex))//
 					);

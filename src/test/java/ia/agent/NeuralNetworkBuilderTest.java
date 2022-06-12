@@ -29,7 +29,7 @@ class NeuralNetworkBuilderTest {
 		NeuralNetwork network = builder.build();
 		network.setInputs(Position.at(651, -3254));
 		network.fire();
-		assertEquals(Position.Move.create(0, 0), network.output());
+		assertEquals(new Position.Move(0, 0), network.output());
 	}
 
 	@Test

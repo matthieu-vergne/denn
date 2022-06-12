@@ -1,10 +1,10 @@
 package ia.terrain;
 
-import static ia.utils.CollectorsUtils.*;
 import static ia.utils.StreamUtils.*;
 
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.stream.Collector;
 import java.util.stream.Stream;
 
 import ia.agent.Agent;
@@ -20,10 +20,11 @@ public class BrowsersFactory {
 	private final List<Position> positionsToBrowse;
 
 	public BrowsersFactory(//
-			NeuralNetwork.Factory networkFactory, Terrain terrain) {
+			NeuralNetwork.Factory networkFactory, Terrain terrain,
+			Collector<Position, ?, List<Position>> positionsDispatcher) {
 		this.networkFactory = networkFactory;
 		this.terrain = terrain;
-		this.positionsToBrowse = terrain.allPositions().collect(toShuffledList());
+		this.positionsToBrowse = terrain.allPositions().collect(positionsDispatcher);
 	}
 
 	public Stream<Browser> browsers(Program program) {

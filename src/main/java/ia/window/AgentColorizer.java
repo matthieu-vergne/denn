@@ -1,5 +1,9 @@
 package ia.window;
 
+import static ia.utils.CollectorsUtils.*;
+import static java.lang.Math.*;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
 import static java.util.Collections.*;
 import static java.util.stream.Collectors.*;
 
@@ -9,16 +13,22 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.WeakHashMap;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 import java.util.function.UnaryOperator;
-import java.util.stream.Stream;
+import java.util.stream.Collector;
 
 import ia.agent.Agent;
 import ia.agent.Neural.Builder;
@@ -28,7 +38,7 @@ import ia.terrain.BrowsersFactory;
 import ia.terrain.BrowsersFactory.Step;
 import ia.terrain.Terrain;
 import ia.utils.Position;
-import ia.utils.Position.Conversion;
+import ia.utils.Position.Move;
 
 // TODO Can we do something with wave function collapse? https://www.procjam.com/tutorials/wfc/
 // TODO Can we do something with dimensions reduction? https://en.wikipedia.org/wiki/Dimensionality_reduction
@@ -39,9 +49,15 @@ public interface AgentColorizer {
 
 	public Color colorize(Agent agent);
 
-	default AgentColorizer cacheByAgent() {
-		WeakHashMap<Agent, Color> cache = new WeakHashMap<Agent, Color>();
+	default AgentColorizer cacheByAgent(Map<Agent, Color> cache) {
 		return agent -> cache.computeIfAbsent(agent, this::colorize);
+	}
+
+	default AgentColorizer cacheByProgram(Map<Program, Color> cache) {
+		return agent -> {
+			Program program = Program.deserialize(agent.chromosome().bytes());
+			return cache.computeIfAbsent(program, k -> colorize(agent));
+		};
 	}
 
 	// TODO New colorizer based on structure?
@@ -359,39 +375,295 @@ public interface AgentColorizer {
 	}
 
 	public static AgentColorizer pickingOnAttractors(Terrain terrain, NeuralNetwork.Factory networkFactory) {
-		BrowsersFactory computer = new BrowsersFactory(networkFactory, terrain);
-		Conversion terrainToColorScale = Position.Conversion.createFromBounds(terrain.bounds(),
-				Position.ORIGIN.boundsTo(Position.at(255, 255)));
+		// FIXME Try sorting the positions smartly (taking the next most distant?)
+		BrowsersFactory browserFactory = new BrowsersFactory(networkFactory, terrain, toShuffledList());
+
+		Move maxDistances = terrain.minPosition().to(terrain.maxPosition());
+		BiFunction<Position, Position, Double> proximityComputer = (p1, p2) -> {
+			Move distances = p1.to(p2).absolute();
+			double xProximity = 1 - (double) distances.dX() / maxDistances.dX();
+			double yProximity = 1 - (double) distances.dY() / maxDistances.dY();
+			return min(xProximity, yProximity);
+		};
+
+		record RG(int red, int green) {
+		}
+		record RGB(RG rg, int blue) {
+			public Color toColor() {
+				return new Color(rg.red, rg.green, blue);
+			}
+		}
+		var averagedRed = weightedAverageChannel(Color::getRed);
+		var averagedGreen = weightedAverageChannel(Color::getGreen);
+		var averagedBlue = weightedAverageChannel(Color::getBlue);
+		var averagedRGB = teeing(teeing(averagedRed, averagedGreen, RG::new), averagedBlue, RGB::new);
+		var averagedColor = collectingAndThen(averagedRGB, RGB::toColor);
+		Map<Position, Color> colorReferences = Map.of(//
+				terrain.topLeft(), Color.ORANGE, //
+				terrain.topRight(), Color.RED, //
+				terrain.bottomRight(), Color.BLUE, //
+				terrain.bottomLeft(), Color.CYAN//
+		);
+		Function<Position, Color> positionColorer = position -> {
+			return colorReferences.entrySet().stream()//
+					.map(entry -> {
+						Color refColor = entry.getValue();
+						Position refPosition = entry.getKey();
+						Double proximity = proximityComputer.apply(position, refPosition);
+						return Map.entry(refColor, proximity);
+					})//
+					.collect(averagedColor);
+		};
+
+		// FIXME Too high computation time
+		int terrainSurface = terrain.width() * terrain.height();
+		// FIXME Perform poorly for attractors on bands
+		int maxStarts = min(terrainSurface, 5);
+		int maxPathsPerStart = min(terrainSurface, 5);
+		int maxStepsPerPath = terrain.width() + terrain.height();
 		AgentColorizer agentColorizer = agent -> {
 			byte[] bytes = agent.chromosome().bytes();
 			Program program = Program.deserialize(bytes);
-			// FIXME Reduce computation time
-			Stream<Position> attractors = computer.browsers(program).limit(64)// first part of 256 (2^6)
+			AttractorsStats stats = browserFactory.browsers(program).limit(maxStarts)//
 					.flatMap(browser -> {
-						return browser.paths().limit(4)// second part of 256 (2^2)
-								.map(path -> {
-									return path.steps()//
-											.limit(terrain.width() + terrain.height())//
-											.takeWhile(Step.movesWithin(10))//
-											.reduce(toLast()).get()//
-											.positionAfter();
-								});
-					});
+						Position startPosition = browser.startPosition();
+						return browser.paths().limit(maxPathsPerStart)//
+								.map(path -> path.steps().limit(maxStepsPerPath)//
+										.takeWhile(Step.movesWithin(10))// Optimization
+										.reduce(toLast()).get()//
+										.positionAfter())//
+								.map(attractor -> new StartAttractorPair(startPosition, attractor));
+					})//
+					.parallel()// Optimization
+					.collect(toStats());
 
-			// TODO Improve color distribution
-			List<Position> allAttractors = attractors.collect(toList());
-			int x = (int) allAttractors.stream().mapToInt(Position::x).average().getAsDouble();
-			int y = (int) allAttractors.stream().mapToInt(Position::y).average().getAsDouble();
-			Position averageAttractor = Position.at(x, y);
-			int differentPositionsCount = (int) allAttractors.stream().distinct().count() - 1;
+			// FIXME Separate randomness over X and Y for bands
+			float randomnessPerStart = (float) (stats.attractorsCountPerStartAverage() - 1) / (maxPathsPerStart - 1);
+			float stabilityPerStart = 1 - randomnessPerStart;
 
-			Position colorScale = terrainToColorScale.convert(averageAttractor);
-			int red = colorScale.x();
-			int green = colorScale.y();
-			int blue = differentPositionsCount;
-			return new Color(red, green, blue);
+			float randomnessOverStarts = (float) (stats.averageStartAttractorsCount() - 1) / (maxStarts - 1);
+			float stabilityOverStarts = 1 - randomnessOverStarts;
+
+			// TODO Test
+			// TODO WHITE (s=0, b=1) when many attractors per start (random)
+			// TODO BLACK (s=0, b=0) when few attractors per start but many overall (static)
+			// FIXME Don't color average attractor, create average color of attractors
+			Color baseColor = positionColorer.apply(stats.averageAttractor());
+			float[] hsb = extractHSB(baseColor);
+			int hue = 0;
+			int saturation = 1;
+			int brightness = 2;
+			return Color.getHSBColor(//
+					hsb[hue], //
+					hsb[saturation] * (stabilityOverStarts * stabilityPerStart), //
+					hsb[brightness] * strengthen(max(stabilityOverStarts, randomnessPerStart))
+							+ (1 - hsb[brightness]) * strengthen(randomnessPerStart)//
+			);
 		};
 		return agentColorizer;
+	}
+
+	private static float strengthen(float value) {
+		// FIXME required?
+		return value;// FunctionUtils.sigmoid(0.5, 10.0).apply(value);
+	}
+
+	private static float[] extractHSB(Color color) {
+		return Color.RGBtoHSB(color.getRed(), color.getGreen(), color.getBlue(), null);
+	}
+
+	private static Collector<Entry<Color, Double>, Object, Integer> weightedAverageChannel(
+			Function<Color, Integer> channelExtractor) {
+		return collectingAndThen(weightedAverageOf(channelExtractor), Double::intValue);
+	}
+
+	static <T, U extends Number> Collector<Map.Entry<T, Double>, ?, Double> weightedAverageOf(
+			Function<T, U> valueExtractor) {
+		class Aggregator {
+			double value = 0;
+			double weight = 0;
+		}
+		return new Collector<Map.Entry<T, Double>, Aggregator, Double>() {
+
+			@Override
+			public Supplier<Aggregator> supplier() {
+				return Aggregator::new;
+			}
+
+			@Override
+			public BiConsumer<Aggregator, Entry<T, Double>> accumulator() {
+				return (ctx, entry) -> {
+					T source = entry.getKey();
+					Double weight = entry.getValue();
+					ctx.value += weight * valueExtractor.apply(source).doubleValue();
+					ctx.weight += weight;
+				};
+			}
+
+			@Override
+			public BinaryOperator<Aggregator> combiner() {
+				return (ctx1, ctx2) -> {
+					ctx1.value += ctx2.value;
+					ctx1.weight += ctx2.weight;
+					return ctx1;
+				};
+			}
+
+			@Override
+			public Function<Aggregator, Double> finisher() {
+				return ctx -> ctx.value / ctx.weight;
+			}
+
+			@Override
+			public Set<Characteristics> characteristics() {
+				return Set.of();
+			}
+		};
+	}
+
+	record AttractorsStats(Map<Position, Integer> attractorsCountPerStart, Position averageAttractor,
+			int attractorsCountPerStartAverage, long averageStartAttractorsCount) {
+		public AttractorsStats(AttractorsStats.Split1 split1, AttractorsStats.Split2 split2) {
+			this(split1.attractorsCountPerStart, split1.averageAttractor, split2.attractorsCountPerStartAverage,
+					split2.averageStartAttractorsCount);
+		}
+
+		record Split1(Map<Position, Integer> attractorsCountPerStart, Position averageAttractor) {
+		}
+
+		record Split2(int attractorsCountPerStartAverage, long averageStartAttractorsCount) {
+		}
+	}
+
+	record StartAttractorPair(Position start, Position attractor) {
+	}
+
+	private static Collector<StartAttractorPair, ?, AttractorsStats> toStats() {
+		var attractorsCountPerStart = toAttractorsCountPerStart();
+		var averageAttractor = toAverageAttractor();
+		var attractorsCountPerStartAverage = toAttractorsCountPerStartAverage();
+		var averageStartAttractorsCount = toAverageStartAttractorsCount();
+
+		var split1 = teeing(attractorsCountPerStart, averageAttractor, AttractorsStats.Split1::new);
+		var split2 = teeing(attractorsCountPerStartAverage, averageStartAttractorsCount, AttractorsStats.Split2::new);
+		return teeing(split1, split2, AttractorsStats::new);
+	}
+
+	static Collector<StartAttractorPair, ?, Position> toAverageAttractor() {
+		return mapping(StartAttractorPair::attractor, toAveragePosition());
+	}
+
+	static Collector<StartAttractorPair, ?, Map<Position, Integer>> toAttractorsCountPerStart() {
+		return new Collector<StartAttractorPair, Map<Position, Set<Position>>, Map<Position, Integer>>() {
+
+			@Override
+			public Supplier<Map<Position, Set<Position>>> supplier() {
+				return HashMap::new;
+			}
+
+			@Override
+			public BiConsumer<Map<Position, Set<Position>>, StartAttractorPair> accumulator() {
+				return (map, pair) -> map.computeIfAbsent(pair.start, k -> new HashSet<>()).add(pair.attractor);
+			}
+
+			@Override
+			public BinaryOperator<Map<Position, Set<Position>>> combiner() {
+				return (map1, map2) -> {
+					map2.forEach((k, v) -> map1.computeIfAbsent(k, k2 -> new HashSet<>()).addAll(v));
+					return map1;
+				};
+			}
+
+			@Override
+			public Function<Map<Position, Set<Position>>, Map<Position, Integer>> finisher() {
+				return map -> map.entrySet().stream().collect(toMap(//
+						entry -> entry.getKey(), //
+						entry -> entry.getValue().size()//
+				));
+			}
+
+			@Override
+			public Set<Characteristics> characteristics() {
+				return Set.of();
+			}
+		};
+	}
+
+	static Collector<StartAttractorPair, ?, Integer> toAttractorsCountPerStartAverage() {
+		return new Collector<StartAttractorPair, Map<Position, Set<Position>>, Integer>() {
+
+			@Override
+			public Supplier<Map<Position, Set<Position>>> supplier() {
+				return HashMap::new;
+			}
+
+			@Override
+			public BiConsumer<Map<Position, Set<Position>>, StartAttractorPair> accumulator() {
+				return (map, pair) -> map.computeIfAbsent(pair.start, k -> new HashSet<>()).add(pair.attractor);
+			}
+
+			@Override
+			public BinaryOperator<Map<Position, Set<Position>>> combiner() {
+				return (map1, map2) -> {
+					map2.forEach((k, v) -> map1.computeIfAbsent(k, k2 -> new HashSet<>()).addAll(v));
+					return map1;
+				};
+			}
+
+			@Override
+			public Function<Map<Position, Set<Position>>, Integer> finisher() {
+				return map -> (int) round(
+						map.entrySet().stream().mapToInt(entry -> entry.getValue().size()).average().getAsDouble());
+			}
+
+			@Override
+			public Set<Characteristics> characteristics() {
+				return Set.of();
+			}
+		};
+	}
+
+	private static Collector<StartAttractorPair, ?, Long> toAverageStartAttractorsCount() {
+		return new Collector<StartAttractorPair, Map<Position, List<Position>>, Long>() {
+
+			@Override
+			public Supplier<Map<Position, List<Position>>> supplier() {
+				return HashMap::new;
+			}
+
+			@Override
+			public BiConsumer<Map<Position, List<Position>>, StartAttractorPair> accumulator() {
+				return (map, pair) -> map.computeIfAbsent(pair.start, k -> new LinkedList<>()).add(pair.attractor);
+			}
+
+			@Override
+			public BinaryOperator<Map<Position, List<Position>>> combiner() {
+				return (map1, map2) -> {
+					map2.forEach((k, v) -> map1.computeIfAbsent(k, k2 -> new LinkedList<>()).addAll(v));
+					return map1;
+				};
+			}
+
+			@Override
+			public Function<Map<Position, List<Position>>, Long> finisher() {
+				return map -> map.entrySet().stream()//
+						.map(entry -> entry.getValue().stream().collect(toAveragePosition()))//
+						.distinct().count();
+			}
+
+			@Override
+			public Set<Characteristics> characteristics() {
+				return Set.of();
+			}
+		};
+	}
+
+	private static Collector<Position, ?, Position> toAveragePosition() {
+		return teeing(toIntAverageOf(Position::x), toIntAverageOf(Position::y), Position::at);
+	}
+
+	private static <T> Collector<T, Object, Integer> toIntAverageOf(ToIntFunction<? super T> mapper) {
+		return collectingAndThen(averagingInt(mapper), Double::intValue);
 	}
 
 	private static <T> BinaryOperator<T> toLast() {
@@ -439,4 +711,5 @@ public interface AgentColorizer {
 		byte[] outputBytes = Arrays.copyOf(outputBits.toByteArray(), outputBitsCount);
 		return ByteBuffer.wrap(outputBytes);
 	}
+
 }

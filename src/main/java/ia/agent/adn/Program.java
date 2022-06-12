@@ -13,17 +13,7 @@ import ia.agent.Neural;
 import ia.terrain.Terrain;
 import ia.utils.Position;
 
-public class Program {
-
-	private final List<Code> codes;
-
-	public Program(List<Code> codes) {
-		this.codes = codes;
-	}
-
-	public List<Code> codes() {
-		return codes;
-	}
+public record Program(List<Code> codes) {
 
 	public void executeOn(Neural.Builder<?> builder) {
 		this.codes.stream().map(Code::resolve).forEach(step -> step.apply(builder));
@@ -117,10 +107,10 @@ public class Program {
 	}
 
 	public static class Factory {
-		
+
 		public Factory() {
 		}
-		
+
 		// TODO Add hidden layer
 		public Program createPerceptrons(UnaryOperator<LayeredNetwork.Layer> dxWeighter,
 				UnaryOperator<LayeredNetwork.Layer> dyWeighter) {
@@ -139,6 +129,20 @@ public class Program {
 			);
 		}
 
+		public Program downMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, 0, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 1, 0, 0)//
+			);
+		}
+
+		public Program downLeftMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, -1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 1, 0, 0)//
+			);
+		}
+
 		public Program downRightMover() {
 			return createPerceptrons(//
 					inputs -> inputs.weighted(0, 0, 1, 0, 0), //
@@ -146,10 +150,38 @@ public class Program {
 			);
 		}
 
+		public Program upMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, 0, 0, 0), //
+					inputs -> inputs.weighted(0, 0, -1, 0, 0)//
+			);
+		}
+
 		public Program upLeftMover() {
 			return createPerceptrons(//
 					inputs -> inputs.weighted(0, 0, -1, 0, 0), //
 					inputs -> inputs.weighted(0, 0, -1, 0, 0)//
+			);
+		}
+
+		public Program upRightMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, 1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, -1, 0, 0)//
+			);
+		}
+
+		public Program rightMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, 1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 0, 0, 0)//
+			);
+		}
+
+		public Program leftMover() {
+			return createPerceptrons(//
+					inputs -> inputs.weighted(0, 0, -1, 0, 0), //
+					inputs -> inputs.weighted(0, 0, 0, 0, 0)//
 			);
 		}
 
