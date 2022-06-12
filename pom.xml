@@ -2,18 +2,48 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>test</groupId>
-	<artifactId>test</artifactId>
+	<groupId>fr.matthieu-vergne</groupId>
+	<artifactId>denn</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
+        <name>DENN</name>
+        <description>Darwinian Evolution of Neural Network</description>
+        <inceptionYear>2022</inceptionYear>
+        <url>https://github.com/matthieu-vergne/denn</url>
+
+        <scm>
+                <connection>scm:git:git://github.com/matthieu-vergne/denn.git</connection>
+                <developerConnection>scm:git:git://github.com/matthieu-vergne/denn.git</developerConnection>
+                <url>scm:git:git://github.com/matthieu-vergne/denn.git</url>
+        </scm>
+
+        <issueManagement>
+                <system>GitHub</system>
+                <url>https://github.com/matthieu-vergne/denn/issues/</url>
+        </issueManagement>
+
+        <licenses>
+                <license>
+                        <name>CC0</name>
+                        <url>http://creativecommons.org/publicdomain/zero/1.0/</url>
+                        <distribution>repo</distribution>
+                </license>
+        </licenses>
+
+        <developers>
+                <developer>
+                        <name>Matthieu Vergne</name>
+                        <email>matthieu_DOT_vergne@(nospam)gmail_DOT_com</email>
+                        <url>https://github.com/matthieu-vergne</url>
+                </developer>
+        </developers>
+
 
 	<properties>
-		<maven.compiler.release>11</maven.compiler.release>
-		<maven.compiler.source>11</maven.compiler.source>
-		<maven.compiler.target>11</maven.compiler.target>
-		<main-class>experimental.Negation</main-class>
-
+		<maven.compiler.version>3.8.1</maven.compiler.version>
+		<maven.compiler.release>17</maven.compiler.release>
+		<maven.compiler.source>17</maven.compiler.source>
+		<maven.compiler.target>17</maven.compiler.target>
 		<junit-jupiter.version>5.6.2</junit-jupiter.version>
-		<javafx-controls.version>14.0.1</javafx-controls.version>
 	</properties>
 
 	<build>
@@ -21,27 +51,63 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.8.1</version>
+				<version>${maven.compiler.version}</version>
 			</plugin>
-			<plugin>
-				<groupId>org.openjfx</groupId>
-				<artifactId>javafx-maven-plugin</artifactId>
-				<version>0.0.4</version>
-				<configuration>
-					<mainClass>${main-class}</mainClass>
-					<launcher>${project.artifactId}</launcher>
-				</configuration>
-			</plugin>
+                        <plugin>
+                                <groupId>org.apache.maven.plugins</groupId>
+                                <artifactId>maven-gpg-plugin</artifactId>
+                                <executions>
+                                        <execution>
+                                                <id>sign-artifacts</id>
+                                                <phase>verify</phase>
+                                                <goals>
+                                                        <goal>sign</goal>
+                                                </goals>
+                                        </execution>
+                                </executions>
+                        </plugin>
+                        <plugin>
+                                <groupId>org.apache.maven.plugins</groupId>
+                                <artifactId>maven-source-plugin</artifactId>
+                                <executions>
+                                        <execution>
+                                                <id>attach-sources</id>
+                                                <goals>
+                                                        <goal>jar</goal>
+                                                </goals>
+                                        </execution>
+                                </executions>
+                        </plugin>
+                        <plugin>
+                                <groupId>org.apache.maven.plugins</groupId>
+                                <artifactId>maven-javadoc-plugin</artifactId>
+                                <executions>
+                                        <execution>
+                                                <id>attach-javadocs</id>
+                                                <goals>
+                                                        <goal>jar</goal>
+                                                </goals>
+                                        </execution>
+                                </executions>
+                        </plugin>
 		</plugins>
 	</build>
 
+        <distributionManagement>
+                <snapshotRepository>
+                        <id>sonatype-snapshot</id>
+                        <name>Sonatype Snapshot</name>
+                        <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+                </snapshotRepository>
+                <repository>
+                        <id>sonatype-release</id>
+                        <name>Sonatype Release</name>
+                        <url>https://oss.sonatype.org/service/local/staging/deploy/maven2</url>
+                </repository>
+        </distributionManagement>
+
 	<dependencies>
-		<!-- APP DEPENDENCIES -->
-		<dependency>
-			<groupId>org.openjfx</groupId>
-			<artifactId>javafx-controls</artifactId>
-			<version>${javafx-controls.version}</version>
-		</dependency>
+		<!-- SOURCE DEPENDENCIES -->
 
 		<!-- TEST DEPENDENCIES -->
 		<dependency>
