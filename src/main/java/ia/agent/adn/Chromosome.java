@@ -34,6 +34,7 @@ public interface Chromosome {
 			@Override
 			public Move decideMoveFrom(Position position) {
 				network.setInputs(position);
+				network.fire();
 				return network.output();
 			}
 			

@@ -10,6 +10,8 @@ import java.util.stream.Stream;
 
 import ia.agent.NeuralNetwork;
 import ia.agent.NeuralNetwork.Builder.IdRetriever;
+import ia.agent.NeuralNetwork.Builder.NetworkPiece;
+import ia.agent.NeuralNetwork.Builder.NetworkPieceRetriever;
 import ia.agent.NeuralNetwork.Builder.NeuronRetriever;
 import ia.agent.NeuralNetwork.Neuron;
 import ia.window.Colorizer;
@@ -18,16 +20,29 @@ import ia.window.Colorizer;
 // TODO Refactor neurons creations into core+synapse creations?
 public class ChromosomeBuilder {
 	private final List<Gene> genes = new LinkedList<>();
+	
+	public ChromosomeBuilder set(IdRetriever idRetriever, Neuron neuron, Colorizer colorizer) {
+		requireNonNull(neuron, "Missing neuron");
+		return set(idRetriever, NetworkPiece.ofNeuron(neuron), colorizer);
+	}
 
-	public ChromosomeBuilder set(IdRetriever idRetriever, NeuronRetriever neuronRetriever, Colorizer colorizer) {
+	public ChromosomeBuilder set(IdRetriever idRetriever, NetworkPiece networkPiece, Colorizer colorizer) {
 		requireNonNull(idRetriever, "Missing ID retriever");
-		requireNonNull(neuronRetriever, "Missing neuron retriever");
+		requireNonNull(networkPiece, "Missing network piece");
+		requireNonNull(colorizer, "Missing colorizer");
+		return set(idRetriever, (NetworkPieceRetriever) builder -> networkPiece, colorizer);
+	}
+	
+	public ChromosomeBuilder set(IdRetriever idRetriever, NetworkPieceRetriever networkPieceRetriever,
+			Colorizer colorizer) {
+		requireNonNull(idRetriever, "Missing ID retriever");
+		requireNonNull(networkPieceRetriever, "Missing network piece retriever");
 		requireNonNull(colorizer, "Missing colorizer");
 		genes.add(new Gene() {
 
 			@Override
 			public NeuralNetwork.Builder applyOn(NeuralNetwork.Builder builder) {
-				return builder.set(idRetriever, neuronRetriever);
+				return builder.set(idRetriever, networkPieceRetriever);
 			}
 
 			@Override
@@ -43,13 +58,6 @@ public class ChromosomeBuilder {
 			}
 		});
 		return this;
-	}
-
-	public ChromosomeBuilder set(IdRetriever idRetriever, Neuron neuron, Colorizer colorizer) {
-		requireNonNull(idRetriever, "Missing ID retriever");
-		requireNonNull(neuron, "Missing neuron");
-		requireNonNull(colorizer, "Missing colorizer");
-		return set(idRetriever, (NeuronRetriever) builder -> neuron, colorizer);
 	}
 
 	public Chromosome build() {

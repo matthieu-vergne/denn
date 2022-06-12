@@ -26,8 +26,8 @@ public class Main {
 		ChromosomeFactory factory = new ChromosomeFactory(random);
 		terrain.placeAgent(Agent.create(factory.moveDownRight()), terrain.minPosition());
 		terrain.placeAgent(Agent.create(factory.moveUpLeft()), terrain.maxPosition());
-		terrain.placeAgent(Agent.create(factory.moveToward(Position.at(0, 10), terrain)), Position.at(5, 5));
-		terrain.placeAgent(Agent.create(factory.moveToward(Position.at(9, 0), terrain)), Position.at(6, 6));
+		terrain.placeAgent(Agent.create(factory.moveToward(Position.at(1, 9), terrain)), Position.at(5, 5));
+		terrain.placeAgent(Agent.create(factory.moveToward(Position.at(8, 1), terrain)), Position.at(6, 6));
 		terrain.placeAgent(Agent.create(factory.moveRandomly()), Position.at(3, 3));
 		int agentsLimit = 10;
 
