@@ -20,6 +20,7 @@ import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.DoubleStream;
 
+import fr.vergne.denn.agent.NeuralNetwork.Neuron;
 import fr.vergne.denn.agent.adn.Program;
 import fr.vergne.denn.utils.Position;
 
@@ -241,12 +242,13 @@ public interface NeuralNetwork {
 						neurons.get(neuronIndex).fire(inputsSuppliers.get(neuronIndex));
 					}
 				};
-			}),//
+			}), //
 			RECORD((neurons, inputsMap) -> {
 				// TODO Extract stuff here
 				return () -> {
-					record X(Neuron neuron, List<Supplier<Double>> inputs) {}
-					int[] index = {0};
+					record X(Neuron neuron, List<Supplier<Double>> inputs) {
+					}
+					int[] index = { 0 };
 					inputsMap.stream()//
 							.map(indexes -> {
 								List<Supplier<Double>> list = new ArrayList<>(indexes.size());
@@ -281,18 +283,22 @@ public interface NeuralNetwork {
 
 		@Override
 		public NeuralNetwork build() {
-			// TODO List<X> with X(Neuron, List<Neuron>)
-			List<Neuron> neurons = snapshot(this.neurons);
-			double[] inputs = {0, 0};
+			// TODO List<ComputationUnit> with ComputationUnit(Neuron, List<Neuron>)
+			List<Neuron> neurons = new ArrayList<>(this.neurons);
+			double[] inputs = { 0, 0 };
 			neurons.set(0, Neuron.onSignalSupplier(() -> inputs[0]));
 			neurons.set(1, Neuron.onSignalSupplier(() -> inputs[1]));
+			Neuron dXNeuron = Optional.ofNullable(this.dXIndex).map(neurons::get).orElse(Neuron.onFixedSignal(0));
+			Neuron dYNeuron = Optional.ofNullable(this.dYIndex).map(neurons::get).orElse(Neuron.onFixedSignal(0));
 			
-			List<List<Integer>> inputsMap = snapshot(this.inputsMap);
-			
+			int size = this.inputsMap.keySet().stream().mapToInt(i -> i).max().getAsInt() + 1;
+			List<List<Integer>> inputsMap = new ArrayList<>(size);
+			for (int index = 0; index < size; index++) {
+				inputsMap.add(this.inputsMap.computeIfAbsent(index, k -> emptyList()));
+			}
+
 			Runnable firingStrategy = FiringStrategy.DEFAULT.create(neurons, inputsMap);
-			
-			Integer dXIndex = this.dXIndex;
-			Integer dYIndex = this.dYIndex;
+
 			return new NeuralNetwork() {
 
 				@Override
@@ -309,8 +315,8 @@ public interface NeuralNetwork {
 				@Override
 				public Position.Move output() {
 					return new Position.Move(//
-							toUnitaryMove(readSignal(neurons, dXIndex)), //
-							toUnitaryMove(readSignal(neurons, dYIndex))//
+							toUnitaryMove(dXNeuron.signal()), //
+							toUnitaryMove(dYNeuron.signal())//
 					);
 				}
 
@@ -318,24 +324,7 @@ public interface NeuralNetwork {
 					int requestedMove = (int) round(signal);
 					return max(-1, min(requestedMove, 1));
 				}
-
-				private double readSignal(List<Neuron> neurons, Integer optionalIndex) {
-					return Optional.ofNullable(optionalIndex).map(neurons::get).map(Neuron::signal).orElse(0.0);
-				}
 			};
-		}
-
-		private List<List<Integer>> snapshot(Map<Integer, List<Integer>> inputs) {
-			int size = inputs.keySet().stream().mapToInt(i -> i).max().getAsInt() + 1;
-			List<List<Integer>> list = new ArrayList<>(size);
-			for (int index = 0; index < size; index++) {
-				list.add(inputs.computeIfAbsent(index, k -> emptyList()));
-			}
-			return list;
-		}
-
-		private ArrayList<Neuron> snapshot(List<Neuron> neurons) {
-			return new ArrayList<>(neurons);
 		}
 
 		// TODO Rename NeuronRetriever once old builder is removed
