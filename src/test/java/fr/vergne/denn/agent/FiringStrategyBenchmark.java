@@ -1,8 +1,10 @@
 package fr.vergne.denn.agent;
 
 import static java.util.Collections.*;
+import static java.util.Map.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
@@ -22,6 +24,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import fr.vergne.denn.agent.FiringStrategyTest.InputNeuron;
 import fr.vergne.denn.agent.NeuralNetwork.Builder.FiringStrategy;
 import fr.vergne.denn.agent.NeuralNetwork.Neuron;
+import fr.vergne.denn.agent.NeuralNetwork.XXX;
 
 public class FiringStrategyBenchmark {
 	public static void main(String[] args) throws Exception {
@@ -34,7 +37,7 @@ public class FiringStrategyBenchmark {
 		@Param
 		public FiringStrategy strategy;
 
-		public Runnable runnable;
+		public XXX xxx;
 		public final Random random = new Random(0);
 		public final InputNeuron x = new InputNeuron();
 		public final InputNeuron y = new InputNeuron();
@@ -66,43 +69,43 @@ public class FiringStrategyBenchmark {
 					// dY
 					Neuron.onInputsFunction(inputs -> inputs.sum()) //
 			);
-			List<List<Integer>> inputsMap = List.of(//
+			Map<Integer, List<Integer>> inputsMap = Map.ofEntries(//
 					// Inputs
-					emptyList(), //
-					emptyList(), //
-					emptyList(), //
-					emptyList(), //
-					emptyList(), //
+					entry(0, emptyList()), //
+					entry(1, emptyList()), //
+					entry(2, emptyList()), //
+					entry(3, emptyList()), //
+					entry(4, emptyList()), //
 					// Weights dX
-					List.of(0), //
-					List.of(1), //
-					List.of(2), //
-					List.of(3), //
-					List.of(4), //
+					entry(5, List.of(0)), //
+					entry(6, List.of(1)), //
+					entry(7, List.of(2)), //
+					entry(8, List.of(3)), //
+					entry(9, List.of(4)), //
 					// dX
-					List.of(5, 6, 7, 8, 9), //
+					entry(10, List.of(5, 6, 7, 8, 9)), //
 					// Weights dY
-					List.of(0), //
-					List.of(1), //
-					List.of(2), //
-					List.of(3), //
-					List.of(4), //
+					entry(11, List.of(0)), //
+					entry(12, List.of(1)), //
+					entry(13, List.of(2)), //
+					entry(14, List.of(3)), //
+					entry(15, List.of(4)), //
 					// dY
-					List.of(11, 12, 13, 14, 15) //
+					entry(16, List.of(11, 12, 13, 14, 15)) //
 			);
-			this.runnable = this.strategy.create(neurons, inputsMap);
+			this.xxx = this.strategy.create(neurons, inputsMap, null, null);
 		}
 	}
 
 	@Benchmark()
 	@Fork(value = 1, warmups = 1)
 	@Warmup(iterations = 3)
-	@Measurement(iterations = 5)
+	@Measurement(iterations = 20)
 	@BenchmarkMode(Mode.SampleTime)
 	@OutputTimeUnit(TimeUnit.NANOSECONDS)
 	public void benchmark(ExecutionPlan plan) {
-		plan.x.setSignal(12);
-		plan.y.setSignal(58);
-		plan.runnable.run();
+		plan.xxx.setX(12);
+		plan.xxx.setY(58);
+		plan.xxx.fire();
 	}
 }
