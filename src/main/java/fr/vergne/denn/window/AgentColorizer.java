@@ -421,6 +421,7 @@ public interface AgentColorizer {
 					.collect(averagedColor);
 		};
 
+		// TODO Profile reproduction to identify bottlenecks
 		// FIXME Too high computation time
 		int terrainSurface = terrain.width() * terrain.height();
 		// FIXME Perform poorly for attractors on random/bands

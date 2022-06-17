@@ -16,8 +16,8 @@ import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
 import fr.vergne.denn.agent.Agent;
-import fr.vergne.denn.agent.NeuralNetwork;
 import fr.vergne.denn.agent.Neural.Builder;
+import fr.vergne.denn.agent.NeuralNetwork;
 import fr.vergne.denn.agent.adn.Mutator;
 import fr.vergne.denn.agent.adn.Program;
 import fr.vergne.denn.agent.adn.Reproducer;
@@ -29,18 +29,25 @@ import fr.vergne.denn.window.Button;
 import fr.vergne.denn.window.Window;
 
 public class Main {
+	@SuppressWarnings("unused")
+	record Profile(int terrainSize, int agentsLimit) {
+		private final static Profile SMALL = new Profile(20, 100);
+		private final static Profile MEDIUM = new Profile(100, 1000);
+	}
+
 
 	public static void main(String[] args) {
+		Profile profile = Profile.MEDIUM;
+
 		Random random = new Random(0);
 
-		Terrain terrain = Terrain.createWithSize(20, 20);
+		Terrain terrain = Terrain.createWithSize(profile.terrainSize, profile.terrainSize);
 
 		Supplier<Builder<NeuralNetwork>> networkBuilderGenerator = () -> new NeuralNetwork.Builder(random::nextDouble);
 		NeuralNetwork.Factory networkFactory = new NeuralNetwork.Factory(networkBuilderGenerator, random);
 		Function<Program, Agent> agentGenerator = program -> Agent.createFromProgram(networkFactory, program);
 		Program.Factory programFactory = new Program.Factory();
 		initializeAgents(terrain, programFactory, agentGenerator);
-		int agentsLimit = 100;
 
 		// TODO Manage selection criteria in the settings
 		Condition.OnPosition selectionCriterion = new Condition.OnPosition.Factory(terrain, random)
@@ -51,10 +58,11 @@ public class Main {
 		Mutator mutator = Mutator.onWeights(random, 0.001);
 
 		Map<Position, Double> survivalRates = estimateSuccessRates(terrain, selectionCriterion);
-		List<List<Button>> buttons = createButtons(random, terrain, networkFactory, programFactory, agentsLimit,
+		List<List<Button>> buttons = createButtons(random, terrain, networkFactory, programFactory, profile.agentsLimit,
 				selectionCriterion, survivalRates, reproducer, mutator);
-		AgentColorizer agentColorizer = AgentColorizer.pickingOnAttractors(terrain, networkFactory);// .cacheByAgent(new
-																									// WeakHashMap<>());
+		AgentColorizer agentColorizer = AgentColorizer.pickingOnAttractors(terrain, networkFactory)
+		// .cacheByAgent(new WeakHashMap<>())//
+		;
 		int cellSize = 800 / terrain.height();
 		// TODO Allow manual agent placement
 		Window window = Window.create(terrain, cellSize, agentColorizer, buttons, networkFactory);

@@ -2,9 +2,6 @@ package fr.vergne.denn.agent;
 
 import static fr.vergne.denn.agent.NeuralNetwork.Builder.*;
 import static java.lang.Math.*;
-import static java.lang.Math.max;
-import static java.lang.Math.min;
-import static java.util.Collections.*;
 import static java.util.stream.Collectors.*;
 
 import java.util.ArrayList;
@@ -221,49 +218,36 @@ public interface NeuralNetwork {
 		}
 
 		// TODO Compute only neurons having an impact on dX/dY
-		// TODO Parallelize neurons firing that are independent
-		// TODO Don't retrieve signals from scratch, store it for reuse
 		public static enum FiringStrategy {
-			SUPPLIED_INPUTS((neurons, inputsMap, dXIndex, dYIndex) -> {
-				List<Neuron> neurons2 = new ArrayList<>(neurons);
+			BASE((neurons, inputsMap, dXIndex, dYIndex) -> {
+				List<Neuron> actualNeurons = new ArrayList<>(neurons);
 				double[] inputs = { 0, 0 };
-				neurons2.set(0, Neuron.onSignalSupplier(() -> inputs[0]));
-				neurons2.set(1, Neuron.onSignalSupplier(() -> inputs[1]));
-				Neuron dXNeuron = Optional.ofNullable(dXIndex).map(neurons2::get).orElse(Neuron.onFixedSignal(0));
-				Neuron dYNeuron = Optional.ofNullable(dYIndex).map(neurons2::get).orElse(Neuron.onFixedSignal(0));
+				actualNeurons.set(0, Neuron.onSignalSupplier(() -> inputs[0]));
+				actualNeurons.set(1, Neuron.onSignalSupplier(() -> inputs[1]));
 
-				int size = inputsMap.keySet().stream().mapToInt(i -> i).max().getAsInt() + 1;
-				List<List<Integer>> inputsMap2 = new ArrayList<>(size);
-				for (int index = 0; index < size; index++) {
-					inputsMap2.add(inputsMap.containsKey(index) ? inputsMap.get(index) : emptyList());
-				}
+				List<Runnable> neuronComputers = IntStream.range(0, neurons.size())//
+						.mapToObj(index -> {
+							Neuron outputNeuron = actualNeurons.get(index);
+							List<Supplier<Double>> inputSignalSuppliers = inputsMap.get(index).stream()//
+									.map(inputIndex -> actualNeurons.get(inputIndex))//
+									.map(inputNeuron -> (Supplier<Double>) inputNeuron::signal)//
+									.collect(toList());
+							return (Runnable) () -> outputNeuron.fire(inputSignalSuppliers);
+						}).collect(toList());
 
-				List<List<Supplier<Double>>> inputsSuppliers = inputsMap2.stream()//
-						.map(indexes -> {
-							List<Supplier<Double>> list = new ArrayList<>(indexes.size());
-							for (Integer neuronIndex : indexes) {
-								Neuron neuron = neurons2.get(neuronIndex);
-								list.add(neuron::signal);
-							}
-							return list;
-						})//
-						.collect(toList());
+				Neuron dXNeuron = Optional.ofNullable(dXIndex).map(actualNeurons::get).orElse(Neuron.onFixedSignal(0));
+				Neuron dYNeuron = Optional.ofNullable(dYIndex).map(actualNeurons::get).orElse(Neuron.onFixedSignal(0));
 
-				Runnable firingStrategy = () -> {
-					for (int neuronIndex = 0; neuronIndex < neurons2.size(); neuronIndex++) {
-						neurons2.get(neuronIndex).fire(inputsSuppliers.get(neuronIndex));
-					}
-				};
 				return new XXX() {
 
 					@Override
 					public void fire() {
-						firingStrategy.run();
+						neuronComputers.forEach(Runnable::run);
 					}
 
 					@Override
 					public List<Neuron> neurons() {
-						return neurons2;
+						return actualNeurons;
 					}
 
 					@Override
@@ -287,137 +271,9 @@ public interface NeuralNetwork {
 					}
 
 				};
-			}), //
-			SUPPLIED_INPUTS2((neurons, inputsMap, dXIndex, dYIndex) -> {
-				List<Neuron> neurons2 = new ArrayList<>(neurons);
-				double[] inputs = { 0, 0 };
-				neurons2.set(0, Neuron.onSignalSupplier(() -> inputs[0]));
-				neurons2.set(1, Neuron.onSignalSupplier(() -> inputs[1]));
-				Neuron dXNeuron = Optional.ofNullable(dXIndex).map(neurons2::get).orElse(Neuron.onFixedSignal(0));
-				Neuron dYNeuron = Optional.ofNullable(dYIndex).map(neurons2::get).orElse(Neuron.onFixedSignal(0));
+			}),;
 
-				int size = inputsMap.keySet().stream().mapToInt(i -> i).max().getAsInt() + 1;
-				List<List<Integer>> inputsMap2 = new ArrayList<>(size);
-				for (int index = 0; index < size; index++) {
-					inputsMap2.add(inputsMap.containsKey(index) ? inputsMap.get(index) : emptyList());
-				}
-
-				List<List<Supplier<Double>>> inputsSuppliers = inputsMap2.stream()//
-						.map(indexes -> {
-							List<Supplier<Double>> list = new ArrayList<>(indexes.size());
-							for (Integer neuronIndex : indexes) {
-								Neuron neuron = neurons2.get(neuronIndex);
-								list.add(neuron::signal);
-							}
-							return list;
-						})//
-						.collect(toList());
-
-				Runnable firingStrategy = () -> {
-					IntStream.range(0, size).forEach(neuronIndex -> {
-						neurons2.get(neuronIndex).fire(inputsSuppliers.get(neuronIndex));
-					});
-				};
-				return new XXX() {
-
-					@Override
-					public void fire() {
-						firingStrategy.run();
-					}
-
-					@Override
-					public List<Neuron> neurons() {
-						return neurons2;
-					}
-
-					@Override
-					public double dXSignal() {
-						return dXNeuron.signal();
-					}
-
-					@Override
-					public double dYSignal() {
-						return dYNeuron.signal();
-					}
-
-					@Override
-					public void setX(int x) {
-						inputs[0] = x;
-					}
-
-					@Override
-					public void setY(int y) {
-						inputs[1] = y;
-					}
-
-				};
-			}), //
-			RECORD((neurons, inputsMap, dXIndex, dYIndex) -> {
-				List<Neuron> neurons2 = new ArrayList<>(neurons);
-				double[] inputs = { 0, 0 };
-				neurons2.set(0, Neuron.onSignalSupplier(() -> inputs[0]));
-				neurons2.set(1, Neuron.onSignalSupplier(() -> inputs[1]));
-				Neuron dXNeuron = Optional.ofNullable(dXIndex).map(neurons2::get).orElse(Neuron.onFixedSignal(0));
-				Neuron dYNeuron = Optional.ofNullable(dYIndex).map(neurons2::get).orElse(Neuron.onFixedSignal(0));
-
-				int size = inputsMap.keySet().stream().mapToInt(i -> i).max().getAsInt() + 1;
-				List<List<Integer>> inputsMap2 = new ArrayList<>(size);
-				for (int index = 0; index < size; index++) {
-					inputsMap2.add(inputsMap.containsKey(index) ? inputsMap.get(index) : emptyList());
-				}
-
-				record X(Neuron neuron, List<Supplier<Double>> inputs) {
-				}
-				int[] index = { 0 };
-				List<X> xs = inputsMap2.stream()//
-						.map(indexes -> {
-							List<Supplier<Double>> list = new ArrayList<>(indexes.size());
-							for (Integer neuronIndex : indexes) {
-								Neuron neuron = neurons2.get(neuronIndex);
-								list.add(neuron::signal);
-							}
-							return new X(neurons2.get(index[0]++), list);
-						})//
-						.collect(toList());
-				Runnable firingStrategy = () -> {
-					xs.forEach(x -> x.neuron.fire(x.inputs));
-				};
-				return new XXX() {
-
-					@Override
-					public void fire() {
-						firingStrategy.run();
-					}
-
-					@Override
-					public List<Neuron> neurons() {
-						return neurons2;
-					}
-
-					@Override
-					public double dXSignal() {
-						return dXNeuron.signal();
-					}
-
-					@Override
-					public double dYSignal() {
-						return dYNeuron.signal();
-					}
-
-					@Override
-					public void setX(int x) {
-						inputs[0] = x;
-					}
-
-					@Override
-					public void setY(int y) {
-						inputs[1] = y;
-					}
-				};
-			}), //
-			;
-
-			public static final FiringStrategy DEFAULT = FiringStrategy.SUPPLIED_INPUTS;
+			public static final FiringStrategy DEFAULT = FiringStrategy.BASE;
 
 			private final Factory factory;
 
