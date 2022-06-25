@@ -1,5 +1,6 @@
 package fr.vergne.denn.agent;
 
+import static fr.vergne.denn.agent.NeuralNetworkBuildStrategyTest.*;
 import static java.util.Collections.*;
 import static java.util.Map.*;
 
@@ -23,6 +24,7 @@ import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
 import fr.vergne.denn.agent.NeuralNetwork.Builder.BuildStrategy;
+import fr.vergne.denn.agent.NeuralNetwork.Builder.NeuronDefinition;
 import fr.vergne.denn.agent.NeuralNetwork.Neuron;
 import fr.vergne.denn.agent.NeuralNetworkBuildStrategyTest.NonUsedNeuron;
 
@@ -93,7 +95,8 @@ public class NeuralNetworkBuildStrategyBenchmark {
 					// dY
 					entry(16, List.of(11, 12, 13, 14, 15)) //
 			);
-			this.neuralNetwork = this.strategy.buildNetwork(neurons, inputsMap, 10, 16);
+			List<NeuronDefinition> neuronsDefinitions = buildDefinitions(neurons, inputsMap);
+			this.neuralNetwork = this.strategy.buildNetwork(neuronsDefinitions, 10, 16);
 		}
 	}
 

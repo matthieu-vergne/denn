@@ -2,20 +2,19 @@ package fr.vergne.denn.agent;
 
 import static fr.vergne.denn.agent.NeuralNetwork.Builder.*;
 import static java.lang.Math.*;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
+import static java.util.Collections.*;
 import static java.util.Objects.*;
 import static java.util.stream.Collectors.*;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.DoubleStream;
-import java.util.stream.IntStream;
 
 import fr.vergne.denn.agent.adn.Program;
 import fr.vergne.denn.utils.Position;
@@ -150,8 +149,11 @@ public interface NeuralNetwork {
 	}
 
 	public static class Builder implements Neural.Builder<NeuralNetwork> {
-		private final List<Neuron> neurons = new LinkedList<>();
-		private final Map<Integer, List<Integer>> inputsMap = new HashMap<>();
+		// TODO Store and use NeuralFunction (careful with its args) instead of neuron
+		static record NeuronDefinition(Neuron neuron, List<Integer> inputIndexes) {
+		}
+
+		private final List<NeuronDefinition> neuronsDefinitions = new LinkedList<>();
 		private final Rand random;
 		private int currentNeuronIndex = 0;
 		private Integer dXIndex = null;
@@ -160,13 +162,12 @@ public interface NeuralNetwork {
 		// TODO remove
 		public static interface Rand {
 			double next();
-		}
 
-		// TODO remove
-		public Builder() {
-			this(() -> {
-				throw new RuntimeException("No random provided");
-			});
+			public static Rand noRandom() {
+				return () -> {
+					throw new RuntimeException("No random provided");
+				};
+			}
 		}
 
 		public Builder(Rand random) {
@@ -179,10 +180,7 @@ public interface NeuralNetwork {
 		}
 
 		public Builder createNeuronWith(NeuralFunction function) {
-			Neuron neuron = Neuron.onInputsFunction(function);
-			neurons.add(neuron);
-			int neuronIndex = neurons.size() - 1;
-			inputsMap.put(neuronIndex, new LinkedList<>());
+			neuronsDefinitions.add(new NeuronDefinition(Neuron.onInputsFunction(function), new LinkedList<>()));
 			return this;
 		}
 
@@ -232,7 +230,7 @@ public interface NeuralNetwork {
 
 		@Override
 		public Builder readSignalFrom(int neuronIndex) {
-			inputsMap.get(currentNeuronIndex).add(normalizeIndex(neuronIndex));
+			neuronsDefinitions.get(currentNeuronIndex).inputIndexes().add(normalizeIndex(neuronIndex));
 			return this;
 		}
 
@@ -257,29 +255,29 @@ public interface NeuralNetwork {
 		}
 
 		private int normalizeIndex(int index) {
-			return ((index % neurons.size()) + neurons.size()) % neurons.size();
+			int size = neuronsDefinitions.size();
+			return ((index % size) + size) % size;
 		}
 
 		// TODO Compute only neurons having an impact on dX/dY
 		public static enum BuildStrategy {
-			BASE((neurons, inputsMap, dXIndex, dYIndex) -> {
-				List<Neuron> actualNeurons = new ArrayList<>(neurons);
+			BASE((neuronsDefinitions, dXIndex, dYIndex) -> {
 				double[] inputs = { 0, 0 };
-				actualNeurons.set(0, Neuron.onSignalSupplier(() -> inputs[0]));
-				actualNeurons.set(1, Neuron.onSignalSupplier(() -> inputs[1]));
+				neuronsDefinitions.set(0, new NeuronDefinition(Neuron.onSignalSupplier(() -> inputs[0]), emptyList()));
+				neuronsDefinitions.set(1, new NeuronDefinition(Neuron.onSignalSupplier(() -> inputs[1]), emptyList()));
 
-				List<Runnable> neuronComputers = IntStream.range(0, neurons.size())//
-						.mapToObj(index -> {
-							Neuron outputNeuron = actualNeurons.get(index);
-							List<Supplier<Double>> inputSignalSuppliers = inputsMap.get(index).stream()//
-									.map(inputIndex -> actualNeurons.get(inputIndex))//
+				List<Runnable> neuronComputers = neuronsDefinitions.stream()//
+						.map(definition -> {
+							Neuron outputNeuron = definition.neuron();
+							List<Supplier<Double>> inputSignalSuppliers = definition.inputIndexes().stream()//
+									.map(inputIndex -> neuronsDefinitions.get(inputIndex).neuron())//
 									.map(inputNeuron -> (Supplier<Double>) inputNeuron::signal)//
 									.collect(toList());
 							return (Runnable) () -> outputNeuron.fire(inputSignalSuppliers);
 						}).collect(toList());
 
-				Neuron dXNeuron = actualNeurons.get(dXIndex);
-				Neuron dYNeuron = actualNeurons.get(dYIndex);
+				Neuron dXNeuron = neuronsDefinitions.get(dXIndex).neuron();
+				Neuron dYNeuron = neuronsDefinitions.get(dYIndex).neuron();
 
 				return new NeuralNetwork() {
 
@@ -319,14 +317,12 @@ public interface NeuralNetwork {
 				this.buildDefinition = factory;
 			}
 
-			public NeuralNetwork buildNetwork(List<Neuron> neurons, Map<Integer, List<Integer>> inputsMap, int dXIndex,
-					int dYIndex) {
-				return buildDefinition.buildNetwork(neurons, inputsMap, dXIndex, dYIndex);
+			public NeuralNetwork buildNetwork(List<NeuronDefinition> neuronsDefinitions, int dXIndex, int dYIndex) {
+				return buildDefinition.buildNetwork(neuronsDefinitions, dXIndex, dYIndex);
 			}
 
 			static interface BuildDefinition {
-				NeuralNetwork buildNetwork(List<Neuron> neurons, Map<Integer, List<Integer>> inputsMap, int dXIndex,
-						int dYIndex);
+				NeuralNetwork buildNetwork(List<NeuronDefinition> neuronsDefinitions, int dXIndex, int dYIndex);
 			}
 
 		}
@@ -335,7 +331,7 @@ public interface NeuralNetwork {
 		public NeuralNetwork build() {
 			requireNonNull(dXIndex, "No dX index defined");
 			requireNonNull(dYIndex, "No dY index defined");
-			return BuildStrategy.DEFAULT.buildNetwork(neurons, inputsMap, dXIndex, dYIndex);
+			return BuildStrategy.DEFAULT.buildNetwork(neuronsDefinitions, dXIndex, dYIndex);
 		}
 
 		// TODO Rename NeuronRetriever once old builder is removed
@@ -360,11 +356,11 @@ public interface NeuralNetwork {
 		}
 
 		public static IndexRetriever lastNeuron() {
-			return builder -> builder.neurons.size() - 1;
+			return builder -> builder.neuronsDefinitions.size() - 1;
 		}
 
 		public static IndexRetriever relativeNeuron(int relativeIndex) {
-			return builder -> (builder.currentNeuronIndex + relativeIndex) % builder.neurons.size();
+			return builder -> (builder.currentNeuronIndex + relativeIndex) % builder.neuronsDefinitions.size();
 		}
 
 		public static IndexRetriever neuronAt(int absoluteIndex) {

@@ -2,11 +2,14 @@ package fr.vergne.denn.agent;
 
 import static java.util.Collections.*;
 import static java.util.Map.*;
+import static java.util.stream.Collectors.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -15,6 +18,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import fr.vergne.denn.agent.NeuralNetwork.Builder.BuildStrategy;
+import fr.vergne.denn.agent.NeuralNetwork.Builder.NeuronDefinition;
 import fr.vergne.denn.agent.NeuralNetwork.Neuron;
 
 class NeuralNetworkBuildStrategyTest {
@@ -36,10 +40,23 @@ class NeuralNetworkBuildStrategyTest {
 				entry(0, emptyList()), //
 				entry(1, emptyList())//
 		);
-		NeuralNetwork network = strategy.buildNetwork(neurons, inputsMap, 0, 1);
+		List<NeuronDefinition> neuronsDefinitions = buildDefinitions(neurons, inputsMap);
+		NeuralNetwork network = strategy.buildNetwork(neuronsDefinitions, 0, 1);
 		network.fire();
 		network.fire();
 		network.fire();
+	}
+
+	static List<NeuronDefinition> buildDefinitions(List<Neuron> neurons, Map<Integer, List<Integer>> inputsMap) {
+		return inputsMap.entrySet().stream()//
+				.sorted(Comparator.comparing(Entry::getKey)).map(entry -> {
+					Integer neuronIndex = entry.getKey();
+					Neuron neuron = neurons.get(neuronIndex);
+
+					List<Integer> inputIndexes = entry.getValue();
+
+					return new NeuronDefinition(neuron, inputIndexes);
+				}).collect(toList());
 	}
 
 	@ParameterizedTest
@@ -63,7 +80,8 @@ class NeuralNetworkBuildStrategyTest {
 				entry(4, List.of(2)), //
 				entry(5, List.of(3))//
 		);
-		NeuralNetwork network = strategy.buildNetwork(neurons, inputsMap, 4, 5);
+		List<NeuronDefinition> neuronsDefinitions = buildDefinitions(neurons, inputsMap);
+		NeuralNetwork network = strategy.buildNetwork(neuronsDefinitions, 4, 5);
 
 		// TODO Test various network structures
 		// TODO Test various trials sequences
@@ -99,7 +117,8 @@ class NeuralNetworkBuildStrategyTest {
 				entry(6, List.of(5)), //
 				entry(7, List.of(6))//
 		);
-		NeuralNetwork network = strategy.buildNetwork(neurons, inputsMap, 7, 7);
+		List<NeuronDefinition> neuronsDefinitions = buildDefinitions(neurons, inputsMap);
+		NeuralNetwork network = strategy.buildNetwork(neuronsDefinitions, 7, 7);
 
 		// TODO Test Y
 		// TODO Test jumps
@@ -128,7 +147,8 @@ class NeuralNetworkBuildStrategyTest {
 				entry(2, List.of(0, 1)), //
 				entry(3, List.of(0, 1))//
 		);
-		NeuralNetwork network = strategy.buildNetwork(neurons, inputsMap, 2, 3);
+		List<NeuronDefinition> neuronsDefinitions = buildDefinitions(neurons, inputsMap);
+		NeuralNetwork network = strategy.buildNetwork(neuronsDefinitions, 2, 3);
 
 		new Trial(new Inputs(123, 321), new Outputs(444, 222)).test(network);
 	}
@@ -159,7 +179,8 @@ class NeuralNetworkBuildStrategyTest {
 				entry(6, List.of(5)), //
 				entry(7, List.of(6))//
 		);
-		NeuralNetwork network = strategy.buildNetwork(neurons, inputsMap, 7, 7);
+		List<NeuronDefinition> neuronsDefinitions = buildDefinitions(neurons, inputsMap);
+		NeuralNetwork network = strategy.buildNetwork(neuronsDefinitions, 7, 7);
 
 		// TODO Test several inputs
 		// TODO Test Y
