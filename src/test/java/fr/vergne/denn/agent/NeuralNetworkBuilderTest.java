@@ -6,8 +6,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import fr.vergne.denn.utils.Position;
-
 // FIXME
 @Disabled("Moves are now restricted to {-1;0;1}, we need to test actual signals another way")
 class NeuralNetworkBuilderTest {
@@ -21,18 +19,25 @@ class NeuralNetworkBuilderTest {
 	void testInitialBuilderReturnsWorkingNetwork() {
 		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		NeuralNetwork network = builder.build();
-		assertDoesNotThrow(() -> network.setInputs(Position.at(654, 123)));
+		assertDoesNotThrow(() -> {
+			network.setXSignal(654);
+			network.setYSignal(123);
+		});
 		assertDoesNotThrow(() -> network.fire());
-		assertNotNull(network.output());
+		assertNotNull(network.dXSignal());
+		assertNotNull(network.dYSignal());
 	}
 
 	@Test
 	void testInitialBuilderReturnsNonMovingNetwork() {
 		NeuralNetwork.Builder builder = new NeuralNetwork.Builder();
 		NeuralNetwork network = builder.build();
-		network.setInputs(Position.at(651, -3254));
+
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(new Position.Move(0, 0), network.output());
+		assertEquals(0, network.dXSignal());
+		assertEquals(0, network.dYSignal());
 	}
 
 	@Test
@@ -42,9 +47,10 @@ class NeuralNetworkBuilderTest {
 		NeuralNetwork network = builder.build();
 
 		int x = 651;
-		network.setInputs(Position.at(x, -3254));
+		network.setXSignal(x);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(x, network.output().dX());
+		assertEquals(x, network.dXSignal());
 	}
 
 	@Test
@@ -54,9 +60,10 @@ class NeuralNetworkBuilderTest {
 		NeuralNetwork network = builder.build();
 
 		int y = -3254;
-		network.setInputs(Position.at(651, y));
+		network.setXSignal(651);
+		network.setYSignal(y);
 		network.fire();
-		assertEquals(y, network.output().dY());
+		assertEquals(y, network.dYSignal());
 	}
 
 	@Test
@@ -66,9 +73,10 @@ class NeuralNetworkBuilderTest {
 		NeuralNetwork network = builder.build();
 
 		int y = -3254;
-		network.setInputs(Position.at(651, y));
+		network.setXSignal(651);
+		network.setYSignal(y);
 		network.fire();
-		assertEquals(y, network.output().dX());
+		assertEquals(y, network.dXSignal());
 	}
 
 	@Test
@@ -78,9 +86,10 @@ class NeuralNetworkBuilderTest {
 		NeuralNetwork network = builder.build();
 
 		int x = 651;
-		network.setInputs(Position.at(x, -3254));
+		network.setXSignal(x);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(x, network.output().dY());
+		assertEquals(x, network.dYSignal());
 	}
 
 	@Test
@@ -90,9 +99,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDXAt(lastNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(124, network.output().dX());
+		assertEquals(124, network.dXSignal());
 	}
 
 	@Test
@@ -102,9 +112,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDYAt(lastNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(124, network.output().dY());
+		assertEquals(124, network.dYSignal());
 	}
 
 	@Test
@@ -114,9 +125,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDXAt(lastNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(123, network.output().dX());
+		assertEquals(123, network.dXSignal());
 	}
 
 	@Test
@@ -127,9 +139,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDXAt(currentNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(123, network.output().dX());
+		assertEquals(123, network.dXSignal());
 	}
 
 	@Test
@@ -142,9 +155,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDXAt(currentNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(1, network.output().dX());
+		assertEquals(1, network.dXSignal());
 	}
 
 	@Test
@@ -157,9 +171,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDXAt(currentNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(2, network.output().dX());
+		assertEquals(2, network.dXSignal());
 	}
 
 	@Test
@@ -176,9 +191,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDYAt(currentNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(6, network.output().dY());
+		assertEquals(6, network.dYSignal());
 	}
 
 	@Test
@@ -195,9 +211,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDYAt(currentNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(-30, network.output().dY());
+		assertEquals(-30, network.dYSignal());
 	}
 
 	@Test
@@ -214,9 +231,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDYAt(currentNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(1, network.output().dY());
+		assertEquals(1, network.dYSignal());
 	}
 
 	@Test
@@ -233,9 +251,10 @@ class NeuralNetworkBuilderTest {
 		builder.setDYAt(currentNeuron());
 		NeuralNetwork network = builder.build();
 
-		network.setInputs(Position.at(651, -3254));
+		network.setXSignal(651);
+		network.setYSignal(-3254);
 		network.fire();
-		assertEquals(3, network.output().dY());
+		assertEquals(3, network.dYSignal());
 	}
 
 }

@@ -2,6 +2,7 @@ package fr.vergne.denn.agent;
 
 import static java.util.Objects.*;
 
+import fr.vergne.denn.agent.NeuralNetwork.AgentNetwork;
 import fr.vergne.denn.agent.adn.Chromosome;
 import fr.vergne.denn.agent.adn.Program;
 import fr.vergne.denn.utils.Position;
@@ -9,11 +10,11 @@ import fr.vergne.denn.utils.Position;
 public class Agent {
 
 	private final Chromosome chromosome;
-	private final NeuralNetwork neuralNetwork;
+	private final AgentNetwork network;
 
 	private Agent(Chromosome chromosome, NeuralNetwork neuralNetwork) {
 		this.chromosome = requireNonNull(chromosome, "No chromosome provided");
-		this.neuralNetwork = requireNonNull(neuralNetwork, "No neural network provided");
+		this.network = requireNonNull(neuralNetwork.forAgent(), "No neural network provided");
 	}
 
 	public static Agent createFromChromosome(NeuralNetwork.Factory networkFactory, Chromosome chromosome) {
@@ -27,9 +28,9 @@ public class Agent {
 	}
 
 	public Position decideNextPosition(Position position) {
-		neuralNetwork.setInputs(position);
-		neuralNetwork.fire();
-		Position.Move move = neuralNetwork.output();
+		network.setPosition(position);
+		network.fire();
+		Position.Move move = network.getMove();
 		return position.move(move);
 	}
 

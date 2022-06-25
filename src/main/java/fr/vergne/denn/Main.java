@@ -37,7 +37,7 @@ public class Main {
 
 
 	public static void main(String[] args) {
-		Profile profile = Profile.MEDIUM;
+		Profile profile = Profile.SMALL;
 
 		Random random = new Random(0);
 

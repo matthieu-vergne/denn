@@ -20,13 +20,13 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import org.openjdk.jmh.infra.Blackhole;
 
-import fr.vergne.denn.agent.FiringStrategyTest.InputNeuron;
-import fr.vergne.denn.agent.NeuralNetwork.Builder.FiringStrategy;
+import fr.vergne.denn.agent.NeuralNetwork.Builder.BuildStrategy;
 import fr.vergne.denn.agent.NeuralNetwork.Neuron;
-import fr.vergne.denn.agent.NeuralNetwork.XXX;
+import fr.vergne.denn.agent.NeuralNetworkBuildStrategyTest.NonUsedNeuron;
 
-public class FiringStrategyBenchmark {
+public class NeuralNetworkBuildStrategyBenchmark {
 	public static void main(String[] args) throws Exception {
 		org.openjdk.jmh.Main.main(args);
 	}
@@ -35,12 +35,12 @@ public class FiringStrategyBenchmark {
 	public static class ExecutionPlan {
 
 		@Param
-		public FiringStrategy strategy;
+		public BuildStrategy strategy;
 
-		public XXX xxx;
+		public NeuralNetwork neuralNetwork;
 		public final Random random = new Random(0);
-		public final InputNeuron x = new InputNeuron();
-		public final InputNeuron y = new InputNeuron();
+		public final NonUsedNeuron x = new NonUsedNeuron();
+		public final NonUsedNeuron y = new NonUsedNeuron();
 
 		@Setup(Level.Invocation)
 		public void setUp() {
@@ -93,7 +93,7 @@ public class FiringStrategyBenchmark {
 					// dY
 					entry(16, List.of(11, 12, 13, 14, 15)) //
 			);
-			this.xxx = this.strategy.create(neurons, inputsMap, null, null);
+			this.neuralNetwork = this.strategy.buildNetwork(neurons, inputsMap, 10, 16);
 		}
 	}
 
@@ -101,11 +101,14 @@ public class FiringStrategyBenchmark {
 	@Fork(value = 1, warmups = 1)
 	@Warmup(iterations = 3)
 	@Measurement(iterations = 20)
-	@BenchmarkMode(Mode.SampleTime)
+	@BenchmarkMode(Mode.AverageTime)
 	@OutputTimeUnit(TimeUnit.NANOSECONDS)
-	public void benchmark(ExecutionPlan plan) {
-		plan.xxx.setX(12);
-		plan.xxx.setY(58);
-		plan.xxx.fire();
+	public void benchmark(ExecutionPlan plan, Blackhole bh) {
+		NeuralNetwork network = plan.neuralNetwork;
+		network.setXSignal(12);
+		network.setYSignal(58);
+		network.fire();
+		bh.consume(network.dXSignal());
+		bh.consume(network.dYSignal());
 	}
 }

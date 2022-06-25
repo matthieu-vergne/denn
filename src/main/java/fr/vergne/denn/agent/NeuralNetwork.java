@@ -2,6 +2,7 @@ package fr.vergne.denn.agent;
 
 import static fr.vergne.denn.agent.NeuralNetwork.Builder.*;
 import static java.lang.Math.*;
+import static java.util.Objects.*;
 import static java.util.stream.Collectors.*;
 
 import java.util.ArrayList;
@@ -9,7 +10,6 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Random;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -19,14 +19,59 @@ import java.util.stream.IntStream;
 
 import fr.vergne.denn.agent.adn.Program;
 import fr.vergne.denn.utils.Position;
+import fr.vergne.denn.utils.Position.Move;
 
 public interface NeuralNetwork {
 
-	void setInputs(Position position);
+	// TODO Remove X/Y in favor of arbitrary inputs?
+	void setXSignal(double x);
+
+	void setYSignal(double y);
 
 	void fire();
 
-	Position.Move output();
+	// TODO Remove DX/DY in favor of arbitrary outputs?
+	double dXSignal();
+
+	double dYSignal();
+
+	interface AgentNetwork {
+		void setPosition(Position position);
+
+		void fire();
+
+		Position.Move getMove();
+	}
+
+	default AgentNetwork forAgent() {
+		NeuralNetwork neuralNetwork = this;
+		return new AgentNetwork() {
+
+			@Override
+			public void setPosition(Position position) {
+				neuralNetwork.setXSignal(position.x());
+				neuralNetwork.setYSignal(position.y());
+			}
+
+			@Override
+			public void fire() {
+				neuralNetwork.fire();
+			}
+
+			@Override
+			public Move getMove() {
+				return new Position.Move(//
+						toUnitaryMove(neuralNetwork.dXSignal()), //
+						toUnitaryMove(neuralNetwork.dYSignal())//
+				);
+			}
+
+			private Integer toUnitaryMove(double signal) {
+				int requestedMove = (int) round(signal);
+				return max(-1, min(requestedMove, 1));
+			}
+		};
+	}
 
 	public static record NeuronPair(Object input, Object output) {
 	};
@@ -104,8 +149,6 @@ public interface NeuralNetwork {
 		}
 	}
 
-	// TODO Remove X/Y in favor of general inputs?
-	// TODO Remove DX/DY in favor of letting read signal of any neuron?
 	public static class Builder implements Neural.Builder<NeuralNetwork> {
 		private final List<Neuron> neurons = new LinkedList<>();
 		private final Map<Integer, List<Integer>> inputsMap = new HashMap<>();
@@ -218,7 +261,7 @@ public interface NeuralNetwork {
 		}
 
 		// TODO Compute only neurons having an impact on dX/dY
-		public static enum FiringStrategy {
+		public static enum BuildStrategy {
 			BASE((neurons, inputsMap, dXIndex, dYIndex) -> {
 				List<Neuron> actualNeurons = new ArrayList<>(neurons);
 				double[] inputs = { 0, 0 };
@@ -235,19 +278,24 @@ public interface NeuralNetwork {
 							return (Runnable) () -> outputNeuron.fire(inputSignalSuppliers);
 						}).collect(toList());
 
-				Neuron dXNeuron = Optional.ofNullable(dXIndex).map(actualNeurons::get).orElse(Neuron.onFixedSignal(0));
-				Neuron dYNeuron = Optional.ofNullable(dYIndex).map(actualNeurons::get).orElse(Neuron.onFixedSignal(0));
+				Neuron dXNeuron = actualNeurons.get(dXIndex);
+				Neuron dYNeuron = actualNeurons.get(dYIndex);
 
-				return new XXX() {
+				return new NeuralNetwork() {
+
+					@Override
+					public void setXSignal(double x) {
+						inputs[0] = x;
+					}
+
+					@Override
+					public void setYSignal(double y) {
+						inputs[1] = y;
+					}
 
 					@Override
 					public void fire() {
 						neuronComputers.forEach(Runnable::run);
-					}
-
-					@Override
-					public List<Neuron> neurons() {
-						return actualNeurons;
 					}
 
 					@Override
@@ -260,70 +308,34 @@ public interface NeuralNetwork {
 						return dYNeuron.signal();
 					}
 
-					@Override
-					public void setX(int x) {
-						inputs[0] = x;
-					}
-
-					@Override
-					public void setY(int y) {
-						inputs[1] = y;
-					}
-
 				};
-			}),;
+			});
 
-			public static final FiringStrategy DEFAULT = FiringStrategy.BASE;
+			public static final BuildStrategy DEFAULT = BuildStrategy.BASE;
 
-			private final Factory factory;
+			private final BuildDefinition buildDefinition;
 
-			private FiringStrategy(Factory factory) {
-				this.factory = factory;
+			private BuildStrategy(BuildDefinition factory) {
+				this.buildDefinition = factory;
 			}
 
-			public XXX create(List<Neuron> neurons, Map<Integer, List<Integer>> inputsMap, Integer dXIndex,
-					Integer dYIndex) {
-				return factory.apply(neurons, inputsMap, dXIndex, dYIndex);
+			public NeuralNetwork buildNetwork(List<Neuron> neurons, Map<Integer, List<Integer>> inputsMap, int dXIndex,
+					int dYIndex) {
+				return buildDefinition.buildNetwork(neurons, inputsMap, dXIndex, dYIndex);
 			}
 
-			static interface Factory {
-				XXX apply(List<Neuron> neurons, Map<Integer, List<Integer>> inputsMap, Integer dXIndex,
-						Integer dYIndex);
+			static interface BuildDefinition {
+				NeuralNetwork buildNetwork(List<Neuron> neurons, Map<Integer, List<Integer>> inputsMap, int dXIndex,
+						int dYIndex);
 			}
 
 		}
 
 		@Override
 		public NeuralNetwork build() {
-			// TODO List<ComputationUnit> with ComputationUnit(Neuron, List<Neuron>)
-			XXX xxx = FiringStrategy.DEFAULT.create(this.neurons, this.inputsMap, this.dXIndex, this.dYIndex);
-
-			return new NeuralNetwork() {
-
-				@Override
-				public void setInputs(Position position) {
-					xxx.setX(position.x());
-					xxx.setY(position.y());
-				}
-
-				@Override
-				public void fire() {
-					xxx.fire();
-				}
-
-				@Override
-				public Position.Move output() {
-					return new Position.Move(//
-							toUnitaryMove(xxx.dXSignal()), //
-							toUnitaryMove(xxx.dYSignal())//
-					);
-				}
-
-				private Integer toUnitaryMove(double signal) {
-					int requestedMove = (int) round(signal);
-					return max(-1, min(requestedMove, 1));
-				}
-			};
+			requireNonNull(dXIndex, "No dX index defined");
+			requireNonNull(dYIndex, "No dY index defined");
+			return BuildStrategy.DEFAULT.buildNetwork(neurons, inputsMap, dXIndex, dYIndex);
 		}
 
 		// TODO Rename NeuronRetriever once old builder is removed
@@ -556,18 +568,4 @@ public interface NeuralNetwork {
 
 	}
 
-	interface XXX {
-		void fire();
-
-		// FIXME For test only
-		List<Neuron> neurons();
-
-		void setY(int y);
-
-		void setX(int x);
-
-		double dXSignal();
-
-		double dYSignal();
-	}
 }

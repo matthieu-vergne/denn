@@ -14,8 +14,6 @@ import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -32,15 +30,15 @@ import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collector;
-import java.util.stream.Collectors;
 
 import fr.vergne.denn.agent.Agent;
-import fr.vergne.denn.agent.NeuralNetwork;
 import fr.vergne.denn.agent.Neural.Builder;
+import fr.vergne.denn.agent.NeuralNetwork;
+import fr.vergne.denn.agent.NeuralNetwork.AgentNetwork;
 import fr.vergne.denn.agent.adn.Program;
 import fr.vergne.denn.terrain.BrowsersFactory;
-import fr.vergne.denn.terrain.Terrain;
 import fr.vergne.denn.terrain.BrowsersFactory.Step;
+import fr.vergne.denn.terrain.Terrain;
 import fr.vergne.denn.utils.Position;
 import fr.vergne.denn.utils.Position.Move;
 
@@ -344,7 +342,7 @@ public interface AgentColorizer {
 		AgentColorizer agentColorizer = agent -> {
 			byte[] bytes = agent.chromosome().bytes();
 			Program program = Program.deserialize(bytes);
-			NeuralNetwork network = networkFactory.execute(program);
+			AgentNetwork network = networkFactory.execute(program).forAgent();
 
 			int stepX = (terrain.width() - 1) / (Byte.SIZE - 1);
 			int stepY = (terrain.height() - 1) / (Byte.SIZE - 1);
@@ -354,9 +352,9 @@ public interface AgentColorizer {
 			int x = 0;
 			int y = 0;
 			for (int i = 0; i < Byte.SIZE; i++) {
-				network.setInputs(Position.at(x, y));
+				network.setPosition(Position.at(x, y));
 				network.fire();
-				Position.Move move = network.output();
+				Position.Move move = network.getMove();
 
 				bits.set(redMinIndex + i, redBit.apply(move));
 				bits.set(greenMinIndex + i, greenBit.apply(move));
